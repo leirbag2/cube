@@ -155,6 +155,12 @@ button.secondary {
   color: var(--muted);
 }
 
+#deleteSolve {
+  background: rgba(239, 68, 68, 0.95);
+  color: #0f172a;
+  box-shadow: none;
+}
+
 .modal-section {
   display: grid;
   gap: 10px;
@@ -169,6 +175,7 @@ button.secondary {
 
 .modal-section .hint {
   margin-top: 4px;
+  font-size: 13px;
 }
 
 .solve-moves {
@@ -178,7 +185,7 @@ button.secondary {
   overflow-y: auto;
   padding-right: 4px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .replay-controls {
@@ -203,6 +210,14 @@ button.secondary {
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+}
+
+.replay-timer {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  text-align: center;
+  letter-spacing: 0.04em;
+  color: var(--accent-2);
 }
 
 .solve-moves .move-row {
@@ -392,7 +407,7 @@ button.secondary {
 
 .times {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text);
   height: 260px;
   max-height: 260px;
@@ -444,7 +459,7 @@ button.secondary {
   grid-template-columns: 1fr 90px 90px;
   gap: 8px;
   align-items: center;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .time-main:hover {

@@ -52,7 +52,7 @@
             </div>
             <div class="move-grid" id="moveButtons"></div>
             <div class="hint">
-              Teclado: I/K (R/R'), U/M (r/r'), J (U), F (U'), L/S (D'/D), V (L), R/E (L'), D (L), H/G (F/F'), W (B), O (B'), X (M). Rotaciones: Ñ (Y), A (Y'), Y/T (X), B/N (X'), Q (Z), P (Z').
+              Teclado: I/K (R/R'), U/M (r/r'), ,/C (u/u'), J (U), F (U'), L/S (D'/D), V (L), R/E (L'), D (L), H/G (F/F'), W (B), O (B'), X (M). Rotaciones: Ñ (Y), A (Y'), Y/T (X), B/N (X'), Q (Z), P (Z').
             </div>
           </section>
 
@@ -72,6 +72,7 @@
               <div>Promedio: <span id="avg">-</span></div>
               <div>Ao5: <span id="ao5">-</span></div>
               <div>Ao12: <span id="ao12">-</span></div>
+              <div>TPS prom: <span id="avgTps">-</span></div>
               <div>Solves: <span id="count">0</span></div>
             </div>
             <div id="times" class="times"></div>
@@ -158,7 +159,7 @@
         <section class="modal-section">
           <h3>Teclado</h3>
           <div class="hint">
-            I/K (R/R'), U/M (r/r'), J (U), F (U'), L/S (D'/D), V (L), R/E (L'), D (L), H/G (F/F'), W (B), O (B'), X (M).
+            I/K (R/R'), U/M (r/r'), ,/C (u/u'), J (U), F (U'), L/S (D'/D), V (L), R/E (L'), D (L), H/G (F/F'), W (B), O (B'), X (M).
           </div>
           <div class="hint">
             Rotaciones: Ñ (Y), A (Y'), Y/T (X), B/N (X'), Q (Z), P (Z').
@@ -180,6 +181,8 @@
           <h3>Tiempo</h3>
           <div class="hint" id="solveTime">-</div>
           <div class="hint" id="solveDate">-</div>
+          <div class="hint" id="solveTps">-</div>
+          <button id="deleteSolve" class="secondary">Eliminar</button>
         </section>
         <section class="modal-section">
           <h3>Scramble</h3>
@@ -203,6 +206,7 @@
               </select>
             </label>
           </div>
+          <div class="replay-timer" id="replayTimer">0.000</div>
           <div id="replayViewport" class="replay-viewport"></div>
           <div class="solve-moves" id="solveMoves"></div>
         </section>

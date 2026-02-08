@@ -34,14 +34,17 @@ const elements = {
   closeSolve: document.querySelector('#closeSolve'),
   solveTime: document.querySelector('#solveTime'),
   solveDate: document.querySelector('#solveDate'),
+  solveTps: document.querySelector('#solveTps'),
   solveScramble: document.querySelector('#solveScramble'),
   solveMoves: document.querySelector('#solveMoves'),
+  deleteSolve: document.querySelector('#deleteSolve'),
   replayPlay: document.querySelector('#replayPlay'),
   replayPause: document.querySelector('#replayPause'),
   replayPrev: document.querySelector('#replayPrev'),
   replayNext: document.querySelector('#replayNext'),
   replaySpeed: document.querySelector('#replaySpeed'),
   replayViewport: document.querySelector('#replayViewport'),
+  replayTimer: document.querySelector('#replayTimer'),
   paletteSelect: document.querySelector('#paletteSelect'),
   resetPalette: document.querySelector('#resetPalette'),
   colorGrid: document.querySelector('#colorGrid'),
@@ -57,6 +60,7 @@ const elements = {
   avg: document.querySelector('#avg'),
   ao5: document.querySelector('#ao5'),
   ao12: document.querySelector('#ao12'),
+  avgTps: document.querySelector('#avgTps'),
   count: document.querySelector('#count'),
   times: document.querySelector('#times'),
 };
@@ -79,6 +83,7 @@ const MOVE_KEYS = [
   'M',
   'r', "r'",
   'l', "l'",
+  'u', "u'",
   'X', "X'",
   'Y', "Y'",
   'Z', "Z'",
@@ -109,6 +114,8 @@ const KEY_MOVES = {
   G: "F'",
   X: "M",
   M: "r'",
+  ',': "u",
+  C: "u'",
 };
 
 const KEY_ROTATIONS = {
@@ -223,6 +230,9 @@ const state = {
   solveRecording: [],
   solveStartPerf: 0,
   solveStartDate: 0,
+  preSolveRecording: [],
+  preSolveStartPerf: 0,
+  selectedSolveIndex: null,
   replay: {
     active: false,
     index: 0,
@@ -238,6 +248,12 @@ const state = {
     size: 3,
     raf: 0,
     playId: 0,
+    startAt: 0,
+    preDuration: 0,
+    totalDuration: 0,
+    startOffset: 0,
+    baseT: 0,
+    solveStartT: 0,
   },
   timerRunning: false,
   timerStart: 0,
@@ -367,6 +383,7 @@ function initUI() {
 
   elements.applyScramble.addEventListener('click', async () => {
     if (!state.scrambleMoves.length) return;
+    resetMainCubeToSolved();
     await enqueueMoves(state.scrambleMoves, { source: 'scramble' });
     state.awaitingSolve = true;
     state.solveActive = false;
@@ -374,6 +391,8 @@ function initUI() {
     state.solveRecording = [];
     state.solveStartPerf = 0;
     state.solveStartDate = 0;
+    state.preSolveRecording = [];
+    state.preSolveStartPerf = 0;
     updateTimerDisplay(0);
     if (state.mirrorMode) {
       state.mirrorUntil = performance.now() + 5000;
@@ -401,6 +420,22 @@ function initUI() {
   });
 
   document.addEventListener('keydown', handleKey);
+}
+
+function resetMainCubeToSolved() {
+  const size = state.size;
+  const offset = (size - 1) / 2;
+  state.cubies.forEach((cubie) => {
+    const initial = cubie.userData.initialCoord || cubie.userData.coord;
+    cubie.userData.coord = { ...initial };
+    cubie.position.set(
+      (initial.x - offset) * SPACING,
+      (initial.y - offset) * SPACING,
+      (initial.z - offset) * SPACING
+    );
+    cubie.quaternion.identity();
+  });
+  if (state.showNet) renderNet();
 }
 
 function mapMirrorLabel(label) {
@@ -622,6 +657,7 @@ function initSolveModal() {
     stopReplay();
     elements.solveModal.classList.add('hidden');
     elements.solveModal.setAttribute('aria-hidden', 'true');
+    state.selectedSolveIndex = null;
   };
   elements.closeSolve.addEventListener('click', close);
   elements.solveModal.addEventListener('click', (event) => {
@@ -647,6 +683,16 @@ function initSolveModal() {
   });
   elements.replaySpeed.addEventListener('change', () => {
     state.replay.speed = Number(elements.replaySpeed.value);
+  });
+
+  elements.deleteSolve.addEventListener('click', () => {
+    if (state.selectedSolveIndex == null) return;
+    const ok = confirm('Eliminar este tiempo?');
+    if (!ok) return;
+    deleteTime(state.selectedSolveIndex);
+    elements.solveModal.classList.add('hidden');
+    elements.solveModal.setAttribute('aria-hidden', 'true');
+    state.selectedSolveIndex = null;
   });
 }
 
@@ -718,6 +764,7 @@ function renderSessions() {
   elements.avg.textContent = times.length ? formatTime(average(times)) : '-';
   elements.ao5.textContent = formatAverage(times, 5);
   elements.ao12.textContent = formatAverage(times, 12);
+  elements.avgTps.textContent = formatTpsAverage(entries);
 
   const ao5List = rollingAverageList(times, 5);
   const ao12List = rollingAverageList(times, 12);
@@ -743,18 +790,10 @@ function renderSessions() {
       elements.scrambleText.textContent = entry.scramble
         ? entry.scramble
         : '';
-      openSolveModal(entry);
+      openSolveModal(entry, originalIndex);
     });
 
-    const del = document.createElement('button');
-    del.className = 'delete-time';
-    del.type = 'button';
-    del.textContent = '×';
-    del.addEventListener('click', () => {
-      deleteTime(entries.length - index - 1);
-    });
-
-    row.append(main, del);
+    row.append(main);
     elements.times.appendChild(row);
   });
 }
@@ -1004,6 +1043,18 @@ function parseMove(label) {
       layers: [0, 1].filter((v) => v < state.size),
     };
   }
+  if (label === 'u' || label === "u'") {
+    const prime = label.includes("'");
+    const config = MOVE_AXIS.U;
+    const max = state.size - 1;
+    return {
+      label,
+      axis: config.axis,
+      face: config.face,
+      dir: prime ? -config.dir : config.dir,
+      layers: [max, Math.max(0, max - 1)],
+    };
+  }
   const base = label.replace("'", '');
   const prime = label.includes("'");
   const config = MOVE_AXIS[base];
@@ -1076,19 +1127,30 @@ function layerIndexForMove(move) {
 async function enqueueMoves(moves, options = {}) {
   const tagged = moves.map((m) => ({ ...m, source: options.source || m.source }));
   state.queue.push(...tagged);
-  if (options.source === 'user' && state.awaitingSolve && !state.timerRunning) {
+  const hasFaceTurn = tagged.some((m) => m.type !== 'cube');
+  if (options.source === 'user' && state.awaitingSolve && !state.timerRunning && hasFaceTurn) {
     state.awaitingSolve = false;
     state.solveActive = true;
     state.solveStartPerf = performance.now();
     state.solveStartDate = Date.now();
     startTimer();
+    if (state.preSolveRecording.length) {
+      const startPerf = state.solveStartPerf;
+      const pre = state.preSolveRecording.map((rec) => ({
+        ...rec,
+        t: rec.t - startPerf,
+      }));
+      state.solveRecording.push(...pre);
+      state.preSolveRecording = [];
+      state.preSolveStartPerf = 0;
+    }
   }
   if (options.source === 'user') {
-    const baseTime = state.solveStartPerf || performance.now();
+    const now = performance.now();
     tagged.forEach((move) => {
-      state.solveRecording.push({
+      const payload = {
         label: move.label || move.type || 'move',
-        t: Math.max(0, performance.now() - baseTime),
+        t: now,
         duration: move.duration ?? 0,
         type: move.type || 'layer',
         axis: move.axis,
@@ -1098,7 +1160,19 @@ async function enqueueMoves(moves, options = {}) {
         layers: move.layers,
         layerIndex: move.layerIndex,
         turns: move.turns,
-      });
+      };
+
+      if (state.solveActive) {
+        payload.t = Math.max(0, now - (state.solveStartPerf || now));
+        state.solveRecording.push(payload);
+        if (move.type !== 'cube' && willSolveAfterMove(move)) {
+          stopSolveEarly();
+        }
+      } else if (state.awaitingSolve && move.type === 'cube') {
+        if (!state.preSolveStartPerf) state.preSolveStartPerf = now;
+        payload.t = now;
+        state.preSolveRecording.push(payload);
+      }
     });
   }
   if (state.rotating) return;
@@ -1418,6 +1492,26 @@ function formatAverage(values, count) {
   return formatTime(avg);
 }
 
+function formatTpsAverage(entries) {
+  const tpsValues = entries
+    .map((entry) => tpsForEntry(entry))
+    .filter((v) => Number.isFinite(v));
+  if (!tpsValues.length) return '-';
+  const avg = average(tpsValues);
+  return `${avg.toFixed(2)} TPS`;
+}
+
+function tpsForEntry(entry) {
+  if (!entry?.time) return null;
+  const moves = entry.reconstruction?.moves || [];
+  if (!moves.length) return null;
+  const effectiveMoves = moves.filter((m) => (m.t || 0) >= 0);
+  if (!effectiveMoves.length) return null;
+  const seconds = entry.time / 1000;
+  if (seconds <= 0) return null;
+  return effectiveMoves.length / seconds;
+}
+
 function rollingAverageList(values, count) {
   return values.map((_, index) => {
     const start = index - count + 1;
@@ -1654,10 +1748,66 @@ function isCubeSolved() {
   });
 }
 
+function willSolveAfterMove(move) {
+  const snapshot = snapshotMainCube();
+  applyLayerInstantMain(move);
+  const solved = isCubeSolved();
+  restoreMainCube(snapshot);
+  return solved;
+}
+
+function snapshotMainCube() {
+  return state.cubies.map((cubie) => ({
+    cubie,
+    coord: { ...cubie.userData.coord },
+    position: cubie.position.clone(),
+    quaternion: cubie.quaternion.clone(),
+  }));
+}
+
+function restoreMainCube(snapshot) {
+  snapshot.forEach((snap) => {
+    snap.cubie.userData.coord = { ...snap.coord };
+    snap.cubie.position.copy(snap.position);
+    snap.cubie.quaternion.copy(snap.quaternion);
+  });
+}
+
+function applyLayerInstantMain(move) {
+  const m = normalizeReplayMove(move) || move;
+  const axis = m.axis;
+  const layer = layerIndexForMove(m);
+  const layers = Array.isArray(layer) ? layer : [layer];
+  const pivot = new THREE.Group();
+  const affected = state.cubies.filter((c) => layers.includes(c.userData.coord[axis]));
+  cubeGroup.add(pivot);
+  affected.forEach((cubie) => {
+    pivot.attach(cubie);
+  });
+  const turns = m.turns ?? 1;
+  const angle = m.dir * (Math.PI / 2) * turns;
+  pivot.rotation[axis] = angle;
+  pivot.updateMatrixWorld();
+  affected.forEach((cubie) => {
+    cubie.applyMatrix4(pivot.matrix);
+    updateCoord(cubie, axis, m.dir, state.size, turns);
+    snapCubiePosition(cubie, state.size);
+    cubeGroup.add(cubie);
+  });
+  cubeGroup.remove(pivot);
+}
+
+function stopSolveEarly() {
+  if (!state.timerRunning) return;
+  state.solveActive = false;
+  stopTimer();
+}
+
 function onSolveComplete() {
   if (state.partyMode) {
     pulseCube();
   }
+  addNewScramble();
 }
 
 function pulseCube() {
@@ -1680,27 +1830,35 @@ function pulseCube() {
   requestAnimationFrame(animate);
 }
 
-function openSolveModal(entry) {
+function openSolveModal(entry, index) {
+  state.selectedSolveIndex = index;
   const date = new Date(entry.at || Date.now());
   elements.solveTime.textContent = `Tiempo: ${formatTime(entry.time)}`;
   elements.solveDate.textContent = `Fecha: ${date.toLocaleString()}`;
+  const tps = tpsForEntry(entry);
+  const moves = entry.reconstruction?.moves || [];
+  const effectiveMoves = moves.filter((m) => (m.t || 0) >= 0);
+  elements.solveTps.textContent = tps ? `TPS: ${tps.toFixed(2)} (${effectiveMoves.length} movimientos)` : `TPS: - (${effectiveMoves.length} movimientos)`;
   elements.solveScramble.textContent = entry.scramble || '-';
 
   elements.solveMoves.innerHTML = '';
-  const moves = entry.reconstruction?.moves || [];
   if (!moves.length) {
     const empty = document.createElement('div');
     empty.className = 'hint';
     empty.textContent = 'No hay reconstruccion guardada.';
     elements.solveMoves.appendChild(empty);
   } else {
+    let counter = 0;
     moves.forEach((move, idx) => {
+      if ((move.t || 0) >= 0) counter += 1;
       const row = document.createElement('div');
       row.className = 'move-row';
       const t = document.createElement('div');
-      t.textContent = `${(move.t / 1000).toFixed(2)}s`;
+      const tSeconds = (move.t / 1000).toFixed(2);
+      t.textContent = `${tSeconds}s`;
       const label = document.createElement('div');
-      label.textContent = move.label || 'mov';
+      const prefix = (move.t || 0) >= 0 ? `#${counter} ` : 'pre ';
+      label.textContent = `${prefix}${move.label || 'mov'}`;
       const dur = document.createElement('div');
       dur.textContent = move.duration ? `${Math.round(move.duration)}ms` : '-';
       row.append(t, label, dur);
@@ -1739,37 +1897,66 @@ function prepareReplay(entry) {
     turns: m.turns,
   }));
 
+  const sortedMoves = moves.slice().sort((a, b) => (a.t || 0) - (b.t || 0));
+  const preMoves = sortedMoves.filter((m) => (m.t || 0) < 0);
+  const solveMoves = sortedMoves.filter((m) => (m.t || 0) >= 0);
+  const preDuration = preMoves.length ? Math.abs(preMoves[0].t || 0) : 0;
+  const totalDuration = solveMoves.length ? (solveMoves[solveMoves.length - 1].t || 0) : 0;
+  const baseT = sortedMoves.length ? (sortedMoves[0].t || 0) : 0;
+  const solveStartT = solveMoves.length ? (solveMoves[0].t || 0) : 0;
+
   state.replay.baseMoves = baseMoves;
-  state.replay.moves = moves;
+  state.replay.moves = [...preMoves, ...solveMoves];
   state.replay.index = 0;
+  state.replay.preDuration = preDuration;
+  state.replay.totalDuration = totalDuration;
+  state.replay.startOffset = preDuration;
+  state.replay.baseT = baseT;
+  state.replay.solveStartT = solveStartT;
 
   resetReplayCube();
   applyMovesInstantToReplay(baseMoves);
   frameReplayCube();
+  elements.replayTimer.textContent = formatTime(0);
 }
 
 function startReplay() {
   if (!state.replay.moves.length) return;
   stopReplay();
+  resetReplayCube();
+  applyMovesInstantToReplay(state.replay.baseMoves);
+  frameReplayCube();
   state.replay.active = true;
+  state.replay.index = 0;
+  state.replay.startAt = performance.now();
   playFromIndex(state.replay.index);
+  tickReplayTimer();
 }
 
 async function playFromIndex(startIndex) {
   const playId = ++state.replay.playId;
   const speed = state.replay.speed || 1;
-  let prev = startIndex > 0 ? (state.replay.moves[startIndex - 1]?.t || 0) : 0;
+  const baseT = state.replay.baseT ?? 0;
+  const realStart = performance.now();
 
   for (let i = startIndex; i < state.replay.moves.length; i += 1) {
     if (!state.replay.active || state.replay.playId !== playId) return;
     const move = state.replay.moves[i];
-    const delay = Math.max(0, (move.t - prev) / speed);
-    await sleep(delay);
+    const desiredStart = Math.max(0, (move.t - baseT) / speed);
+    const elapsed = (performance.now() - realStart);
+    const wait = Math.max(0, desiredStart - elapsed);
+    if (wait) {
+      await sleep(wait);
+    }
     if (!state.replay.active || state.replay.playId !== playId) return;
-    await applyMoveAnimatedToReplay(move);
+    const duration = Math.max(40, Math.min(260, (move.duration || 120) / speed));
+    await applyMoveAnimatedToReplay(move, duration);
     state.replay.index = i + 1;
-    prev = move.t;
   }
+
+  state.replay.active = false;
+  const finalTime = Math.max(0, state.replay.totalDuration - state.replay.solveStartT);
+  elements.replayTimer.textContent = formatTime(finalTime);
 }
 
 function stopReplay() {
@@ -1777,6 +1964,15 @@ function stopReplay() {
   state.replay.playId += 1;
   state.replay.timers.forEach((t) => clearTimeout(t));
   state.replay.timers = [];
+}
+
+function tickReplayTimer() {
+  if (!state.replay.active) return;
+  const elapsed = (performance.now() - state.replay.startAt) * (state.replay.speed || 1);
+  const timeline = (state.replay.baseT || 0) + elapsed;
+  const solveTime = Math.max(0, timeline - (state.replay.solveStartT || 0));
+  elements.replayTimer.textContent = formatTime(solveTime);
+  requestAnimationFrame(tickReplayTimer);
 }
 
 async function stepReplay(direction) {
@@ -1907,10 +2103,10 @@ function applyMoveInstantToReplay(move) {
   renderReplay();
 }
 
-function applyMoveAnimatedToReplay(move) {
+function applyMoveAnimatedToReplay(move, durationOverride) {
   const m = normalizeReplayMove(move);
   if (!m) return;
-  const duration = Math.max(60, Math.min(260, m.duration || 120));
+  const duration = Math.max(60, Math.min(260, durationOverride || m.duration || 120));
   if (m.type === 'cube') {
     return rotateCubeOnReplay(m, duration);
   }
