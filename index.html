@@ -18,6 +18,7 @@
           </label>
           <button id="rebuild">Recrear</button>
           <button id="resetView">Centrar vista</button>
+          <button id="openSettings" class="secondary">Configuración</button>
         </div>
       </header>
 
@@ -28,6 +29,7 @@
             <div class="timer" id="timer">0.000</div>
             <div class="timer-hint">Espacio para iniciar/detener</div>
           </div>
+          <div id="netView" class="net-view net-overlay hidden"></div>
         </section>
 
         <aside class="panel">
@@ -42,7 +44,7 @@
             </div>
             <div class="move-grid" id="moveButtons"></div>
             <div class="hint">
-              Teclado: I/K (R), J/U (U), L/S (D), D/E (L), H/G (F), W (B'). Ñ rota todo el cubo en X.
+              Teclado: I/K (R/R'), U/M (r/r'), J (U), F (U'), L/S (D'/D), V/R (L/L'), D/E (L/L'), H/G (F/F'), W/O (B/B'), X (M). Rotaciones: Ñ (Y), A (Y'), Y/T (X), B/N (X'), Q (Z), P (Z').
             </div>
           </section>
 
@@ -69,9 +71,12 @@
             <div class="stats">
               <div>Mejor: <span id="best">-</span></div>
               <div>Promedio: <span id="avg">-</span></div>
+              <div>Ao5: <span id="ao5">-</span></div>
+              <div>Ao12: <span id="ao12">-</span></div>
               <div>Solves: <span id="count">0</span></div>
             </div>
             <div id="times" class="times"></div>
+            <div id="scrambleDetail" class="scramble-detail">Scramble: -</div>
           </section>
 
           <section class="card">
@@ -83,8 +88,37 @@
               Espacio inicia/detiene el cronometro. Enter registra el tiempo.
             </div>
           </section>
+
         </aside>
       </main>
+    </div>
+
+    <div id="settingsModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Configuración</h2>
+          <button id="closeSettings" class="secondary">Cerrar</button>
+        </div>
+        <section class="modal-section">
+          <h3>Vista</h3>
+          <div class="row">
+            <button id="toggleXray">X-ray</button>
+            <button id="toggleExplode">Exploded</button>
+            <button id="toggleNet">Net</button>
+          </div>
+        </section>
+        <section class="modal-section">
+          <h3>Colores</h3>
+          <div class="row">
+            <label class="control">
+              Paleta
+              <select id="paletteSelect"></select>
+            </label>
+            <button id="resetPalette">Reset</button>
+          </div>
+          <div class="color-grid" id="colorGrid"></div>
+        </section>
+      </div>
     </div>
 
     <script type="importmap">
