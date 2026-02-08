@@ -1,6 +1,20 @@
 import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
-import { randomScrambleForEvent } from 'https://cdn.cubing.net/v0/js/cubing/scramble';
+
+const ENABLE_CUBING = true;
+let cubingScrambler = null;
+
+async function getCubingScrambler() {
+  if (!ENABLE_CUBING) return null;
+  if (cubingScrambler !== null) return cubingScrambler;
+  try {
+    const mod = await import('https://cdn.cubing.net/v0/js/cubing/scramble');
+    cubingScrambler = mod?.randomScrambleForEvent || null;
+  } catch (err) {
+    cubingScrambler = null;
+  }
+  return cubingScrambler;
+}
 
 const elements = {
   size: document.querySelector('#size'),
@@ -10,6 +24,7 @@ const elements = {
   layer: document.querySelector('#layer'),
   layerValue: document.querySelector('#layerValue'),
   renderer: document.querySelector('#renderer'),
+  webglError: document.querySelector('#webglError'),
   moveButtons: document.querySelector('#moveButtons'),
   applyScramble: document.querySelector('#applyScramble'),
   clearScramble: document.querySelector('#clearScramble'),
@@ -323,10 +338,15 @@ function initScene() {
   camera = new THREE.PerspectiveCamera(45, elements.renderer.clientWidth / elements.renderer.clientHeight, 0.1, 1000);
   camera.position.set(6, 6, 6);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(elements.renderer.clientWidth, elements.renderer.clientHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  elements.renderer.appendChild(renderer.domElement);
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(elements.renderer.clientWidth, elements.renderer.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    elements.renderer.appendChild(renderer.domElement);
+  } catch (err) {
+    elements.webglError.classList.remove('hidden');
+    throw err;
+  }
 
   controls = new TrackballControls(camera, renderer.domElement);
   controls.rotateSpeed = 4.0;
@@ -1405,7 +1425,9 @@ async function generateOfficialScramble(size) {
   };
   if (eventMap[size]) {
     try {
-      const alg = await randomScrambleForEvent(eventMap[size]);
+      const scrambler = await getCubingScrambler();
+      if (!scrambler) throw new Error('scrambler_unavailable');
+      const alg = await scrambler(eventMap[size]);
       const text = alg.toString();
       const moves = parseScrambleToMoves(text, size);
       return { text, moves };
@@ -1801,6 +1823,7 @@ function stopSolveEarly() {
   if (!state.timerRunning) return;
   state.solveActive = false;
   stopTimer();
+  addNewScramble();
 }
 
 function onSolveComplete() {

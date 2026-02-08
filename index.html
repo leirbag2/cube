@@ -33,6 +33,11 @@
       <main class="main">
         <section class="scene">
           <div id="renderer"></div>
+          <div id="webglError" class="webgl-error hidden">
+            <h2>WebGL no disponible</h2>
+            <div class="hint">Tu navegador no pudo crear un contexto WebGL.</div>
+            <div class="hint">Prueba actualizar drivers, cambiar navegador o desactivar/activar aceleración por hardware.</div>
+          </div>
           <div class="hud">
             <div class="timer" id="timer">0.000</div>
             <div class="timer-hint">Espacio para iniciar/detener</div>

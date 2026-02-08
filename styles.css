@@ -276,6 +276,22 @@ button.secondary {
   min-height: 560px;
 }
 
+.webgl-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.9);
+  z-index: 4;
+}
+
+.webgl-error h2 {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
 #renderer {
   width: 100%;
   height: 100%;
