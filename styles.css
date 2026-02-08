@@ -22,13 +22,18 @@ body {
   font-family: 'Space Grotesk', sans-serif;
   background: radial-gradient(circle at top left, #1e293b, #0b1120 55%, #020617 100%);
   color: var(--text);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+}
+
+html {
+  height: 100%;
 }
 
 #app {
   display: grid;
   grid-template-rows: auto 1fr;
-  min-height: 100vh;
+  height: 100%;
 }
 
 .topbar {
@@ -155,6 +160,7 @@ button.secondary {
   grid-template-columns: 1fr 360px;
   gap: 20px;
   padding: 20px;
+  min-height: 0;
 }
 
 .scene {
@@ -200,6 +206,8 @@ button.secondary {
 .panel {
   display: grid;
   gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .card {
@@ -321,6 +329,16 @@ button.secondary {
   padding: 8px;
   border-radius: 10px;
   word-break: break-word;
+}
+
+.scramble-overlay {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 70%;
+  text-align: center;
+  z-index: 2;
 }
 
 .stats {

@@ -25,6 +25,8 @@ const elements = {
   paletteSelect: document.querySelector('#paletteSelect'),
   resetPalette: document.querySelector('#resetPalette'),
   colorGrid: document.querySelector('#colorGrid'),
+  edgeThickness: document.querySelector('#edgeThickness'),
+  edgeValue: document.querySelector('#edgeValue'),
   sessionName: document.querySelector('#sessionName'),
   createSession: document.querySelector('#createSession'),
   sessionSelect: document.querySelector('#sessionSelect'),
@@ -53,6 +55,8 @@ const MOVE_KEYS = [
   'F', "F'",
   'B', "B'",
   'M',
+  'r', "r'",
+  'l', "l'",
   'X', "X'",
   'Y', "Y'",
   'Z', "Z'",
@@ -107,12 +111,12 @@ const PALETTES = {
     B: '#3b82f6',
   },
   Pastel: {
-    R: '#ff6f91',
-    L: '#ffb347',
-    U: '#ffffff',
-    D: '#ffe66d',
-    F: '#7bed9f',
-    B: '#70a1ff',
+    R: '#F4889A',
+    L: '#FFAF68',
+    U: '#F6E683',
+    D: '#A484E9',
+    F: '#79D45E',
+    B: '#31BFF3',
   },
   HighContrast: {
     R: '#ff0033',
@@ -131,41 +135,45 @@ const PALETTES = {
     B: '#a8b3c7',
   },
   Neon: {
-    R: '#ff1f5a',
-    L: '#ff8a00',
-    U: '#f8fafc',
-    D: '#ffee00',
-    F: '#00e676',
-    B: '#1e90ff',
+    R: '#ff0c12',
+    L: '#fdae32',
+    U: '#fdfb00',
+    D: '#8f00f2',
+    F: '#5cff00',
+    B: '#00cffb',
   },
   Retro: {
-    R: '#d7263d',
-    L: '#f46036',
-    U: '#f9c80e',
-    D: '#f8f4e3',
-    F: '#2e294e',
-    B: '#1b998b',
+    R: '#bd6b4d',
+    L: '#d4916a',
+    U: '#f2ddbd',
+    D: '#f0ce8b',
+    F: '#92b0ac',
+    B: '#7e8fa6',
   },
   Ocean: {
-    R: '#ff6b6b',
-    L: '#ffa07a',
-    U: '#f1f5f9',
-    D: '#ffd166',
-    F: '#06d6a0',
-    B: '#118ab2',
+    R: '#ff7f50',
+    L: '#8b7355',
+    U: '#faf9f6',
+    D: '#9fe2bf',
+    F: '#008080',
+    B: '#003153',
   },
   Solar: {
-    R: '#ff3c38',
-    L: '#ff9f1c',
-    U: '#ffffff',
-    D: '#f6f740',
-    F: '#2ec4b6',
-    B: '#3a86ff',
+    R: '#e5cc4c',
+    L: '#bceb84',
+    U: '#96b5c0',
+    D: '#424748',
+    F: '#6cb36b',
+    B: '#065039',
   },
 };
 const FACE_KEYS = ['R', 'L', 'U', 'D', 'F', 'B'];
 const STICKER_SIZE = 0.94;
 const STICKER_OFFSET = 0.52;
+const BASE_SCALE = 0.90;
+const BASE_SCALE_RANGE = 0.08;
+const STICKER_SCALE = 0.88;
+const STICKER_SCALE_RANGE = 0.12;
 
 const state = {
   size: 3,
@@ -182,6 +190,7 @@ const state = {
   solveActive: false,
   paletteName: 'Standard',
   colors: { ...PALETTES.Standard },
+  edgeThickness: 70,
   timerRunning: false,
   timerStart: 0,
   timerElapsed: 0,
@@ -211,6 +220,9 @@ function loadPalette() {
       state.colors = { ...PALETTES.Standard, ...parsed.colors };
       state.paletteName = parsed.name || 'Custom';
     }
+    if (typeof parsed?.edgeThickness === 'number') {
+      state.edgeThickness = parsed.edgeThickness;
+    }
   } catch (err) {
     // ignore malformed palette
   }
@@ -220,6 +232,7 @@ function persistPalette() {
   localStorage.setItem('cubePalette', JSON.stringify({
     name: state.paletteName,
     colors: state.colors,
+    edgeThickness: state.edgeThickness,
   }));
 }
 
@@ -290,6 +303,7 @@ function initUI() {
   buildMoveButtons();
   initLookahead();
   initPalette();
+  initEdges();
   initSettingsModal();
 
   elements.scramble.addEventListener('click', () => {
@@ -358,6 +372,17 @@ function initPalette() {
   });
 
   renderPaletteInputs();
+}
+
+function initEdges() {
+  elements.edgeThickness.value = String(state.edgeThickness);
+  elements.edgeValue.textContent = String(state.edgeThickness);
+  elements.edgeThickness.addEventListener('input', () => {
+    state.edgeThickness = Number(elements.edgeThickness.value);
+    elements.edgeValue.textContent = String(state.edgeThickness);
+    persistPalette();
+    updateEdgeThickness();
+  });
 }
 
 function renderPaletteInputs() {
@@ -597,6 +622,7 @@ function buildCube(size) {
   updateLayerControl();
   updateXray();
   updateExplode();
+  updateEdgeThickness();
   if (state.showNet) renderNet();
   frameCube();
   updateTitle(size);
@@ -606,7 +632,8 @@ function createCubie(x, y, z, size, baseGeometry, stickerGeometry) {
   const group = new THREE.Group();
   const baseMaterial = new THREE.MeshStandardMaterial({ color: BASE_INNER });
   const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
-  baseMesh.scale.set(0.96, 0.96, 0.96);
+  const baseScale = getBaseScale();
+  baseMesh.scale.set(baseScale, baseScale, baseScale);
   baseMesh.userData.isBase = true;
   group.add(baseMesh);
 
@@ -629,6 +656,8 @@ function addSticker(group, geometry, normal, color, faceKey) {
   const sticker = new THREE.Mesh(geometry, material);
   sticker.userData.isSticker = true;
   sticker.userData.faceKey = faceKey;
+  const stickerScale = getStickerScale();
+  sticker.scale.set(stickerScale, stickerScale, stickerScale);
   sticker.position.copy(normal.clone().multiplyScalar(STICKER_OFFSET));
   sticker.lookAt(normal);
   group.add(sticker);
@@ -741,6 +770,17 @@ function parseMove(label) {
       face: config.face,
       dir: prime ? -config.dir : config.dir,
       layers: [max, Math.max(0, max - 1)],
+    };
+  }
+  if (label === 'l' || label === "l'") {
+    const prime = label.includes("'");
+    const config = MOVE_AXIS.L;
+    return {
+      label,
+      axis: config.axis,
+      face: config.face,
+      dir: prime ? -config.dir : config.dir,
+      layers: [0, 1].filter((v) => v < state.size),
     };
   }
   const base = label.replace("'", '');
@@ -1069,6 +1109,33 @@ function updateStickerColors() {
     });
     cubie.userData.stickerColors = map;
   });
+}
+
+function updateEdgeThickness() {
+  const baseScale = getBaseScale();
+  const stickerScale = getStickerScale();
+  state.cubies.forEach((cubie) => {
+    cubie.children.forEach((child) => {
+      if (child.userData.isBase) {
+        child.scale.set(baseScale, baseScale, baseScale);
+      }
+      if (child.userData.isSticker) {
+        child.scale.set(stickerScale, stickerScale, stickerScale);
+      }
+    });
+  });
+  if (state.showNet) renderNet();
+}
+
+function getBaseScale() {
+  const t = clamp(state.edgeThickness / 100, 0, 1);
+  return BASE_SCALE + BASE_SCALE_RANGE * t;
+}
+
+function getStickerScale() {
+  const t = clamp(state.edgeThickness / 100, 0, 1);
+  const size = STICKER_SCALE + STICKER_SCALE_RANGE * t;
+  return size / STICKER_SIZE;
 }
 
 function updateExplode() {
