@@ -24,6 +24,9 @@ const elements = {
   openSettings: document.querySelector('#openSettings'),
   settingsModal: document.querySelector('#settingsModal'),
   closeSettings: document.querySelector('#closeSettings'),
+  toggleParty: document.querySelector('#toggleParty'),
+  toggleMirror: document.querySelector('#toggleMirror'),
+  toggleGhost: document.querySelector('#toggleGhost'),
   openHelp: document.querySelector('#openHelp'),
   helpModal: document.querySelector('#helpModal'),
   closeHelp: document.querySelector('#closeHelp'),
@@ -32,6 +35,8 @@ const elements = {
   colorGrid: document.querySelector('#colorGrid'),
   edgeThickness: document.querySelector('#edgeThickness'),
   edgeValue: document.querySelector('#edgeValue'),
+  cameraDistance: document.querySelector('#cameraDistance'),
+  cameraValue: document.querySelector('#cameraValue'),
   sessionName: document.querySelector('#sessionName'),
   createSession: document.querySelector('#createSession'),
   sessionSelect: document.querySelector('#sessionSelect'),
@@ -49,6 +54,7 @@ let camera;
 let renderer;
 let controls;
 let cubeGroup;
+let ghostGroup;
 const SPACING = 1.08;
 
 const MOVE_KEYS = [
@@ -197,6 +203,11 @@ const state = {
   paletteName: 'Standard',
   colors: { ...PALETTES.Standard },
   edgeThickness: 70,
+  cameraDistance: 2.8,
+  partyMode: false,
+  mirrorMode: false,
+  ghostMode: false,
+  mirrorUntil: 0,
   timerRunning: false,
   timerStart: 0,
   timerElapsed: 0,
@@ -229,6 +240,9 @@ function loadPalette() {
     if (typeof parsed?.edgeThickness === 'number') {
       state.edgeThickness = parsed.edgeThickness;
     }
+    if (typeof parsed?.cameraDistance === 'number') {
+      state.cameraDistance = parsed.cameraDistance;
+    }
   } catch (err) {
     // ignore malformed palette
   }
@@ -239,6 +253,7 @@ function persistPalette() {
     name: state.paletteName,
     colors: state.colors,
     edgeThickness: state.edgeThickness,
+    cameraDistance: state.cameraDistance,
   }));
 }
 
@@ -311,7 +326,9 @@ function initUI() {
   initLookahead();
   initPalette();
   initEdges();
+  initCameraDistance();
   initSettingsModal();
+  initFunModes();
   initHelpModal();
 
   resetScrambleHistory();
@@ -323,6 +340,9 @@ function initUI() {
     state.solveActive = false;
     state.timerElapsed = 0;
     updateTimerDisplay(0);
+    if (state.mirrorMode) {
+      state.mirrorUntil = performance.now() + 5000;
+    }
   });
 
   elements.clearScramble.addEventListener('click', () => {
@@ -346,6 +366,19 @@ function initUI() {
   });
 
   document.addEventListener('keydown', handleKey);
+}
+
+function mapMirrorLabel(label) {
+  if (!state.mirrorMode) return label;
+  const now = performance.now();
+  if (now > state.mirrorUntil) return label;
+
+  const prime = label.includes("'");
+  const base = label.replace("'", '');
+  const mirrorMap = { R: 'L', L: 'R', U: 'D', D: 'U', F: 'B', B: 'F', r: 'l', l: 'r' };
+  const mappedBase = mirrorMap[base] || base;
+  const mappedPrime = !prime;
+  return mappedPrime ? `${mappedBase}'` : mappedBase;
 }
 
 function initPalette() {
@@ -375,6 +408,7 @@ function initPalette() {
     state.colors = { ...PALETTES[name] };
     persistPalette();
     updateStickerColors();
+    updateGhost();
     renderPaletteInputs();
     if (state.showNet) renderNet();
   });
@@ -385,6 +419,7 @@ function initPalette() {
     elements.paletteSelect.value = 'Standard';
     persistPalette();
     updateStickerColors();
+    updateGhost();
     renderPaletteInputs();
     if (state.showNet) renderNet();
   });
@@ -403,6 +438,17 @@ function initEdges() {
   });
 }
 
+function initCameraDistance() {
+  elements.cameraDistance.value = String(Math.round(state.cameraDistance * 100));
+  elements.cameraValue.textContent = state.cameraDistance.toFixed(2);
+  elements.cameraDistance.addEventListener('input', () => {
+    state.cameraDistance = Number(elements.cameraDistance.value) / 100;
+    elements.cameraValue.textContent = state.cameraDistance.toFixed(2);
+    persistPalette();
+    frameCube();
+  });
+}
+
 function renderPaletteInputs() {
   elements.colorGrid.innerHTML = '';
   FACE_KEYS.forEach((faceKey) => {
@@ -418,6 +464,7 @@ function renderPaletteInputs() {
       state.colors[faceKey] = input.value;
       persistPalette();
       updateStickerColors();
+      updateGhost();
       if (state.showNet) renderNet();
     });
     wrapper.appendChild(input);
@@ -471,6 +518,31 @@ function initSettingsModal() {
     if (event.key === 'Escape' && !elements.settingsModal.classList.contains('hidden')) {
       close();
     }
+  });
+}
+
+function initFunModes() {
+  elements.toggleParty.classList.add('secondary');
+  elements.toggleMirror.classList.add('secondary');
+  elements.toggleGhost.classList.add('secondary');
+
+  elements.toggleParty.addEventListener('click', () => {
+    state.partyMode = !state.partyMode;
+    elements.toggleParty.classList.toggle('secondary', !state.partyMode);
+  });
+
+  elements.toggleMirror.addEventListener('click', () => {
+    state.mirrorMode = !state.mirrorMode;
+    elements.toggleMirror.classList.toggle('secondary', !state.mirrorMode);
+    if (state.mirrorMode) {
+      state.mirrorUntil = performance.now() + 5000;
+    }
+  });
+
+  elements.toggleGhost.addEventListener('click', () => {
+    state.ghostMode = !state.ghostMode;
+    elements.toggleGhost.classList.toggle('secondary', !state.ghostMode);
+    updateGhost();
   });
 }
 
@@ -615,7 +687,7 @@ function buildMoveButtons() {
         enqueueMoves([{ type: 'cube', axis: axisMap[base], dir }], { source: 'user' });
         return;
       }
-      const move = parseMove(label);
+      const move = parseMove(mapMirrorLabel(label));
       enqueueMoves([move], { source: 'user' });
     });
     elements.moveButtons.appendChild(btn);
@@ -665,9 +737,11 @@ function buildCube(size) {
   if (state.showNet) renderNet();
   frameCube();
   updateTitle(size);
+  updateGhost();
 }
 
-function createCubie(x, y, z, size, baseGeometry, stickerGeometry) {
+function createCubie(x, y, z, size, baseGeometry, stickerGeometry, options = {}) {
+  const { ghost = false } = options;
   const group = new THREE.Group();
   const baseMaterial = new THREE.MeshStandardMaterial({ color: BASE_INNER });
   const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -680,17 +754,23 @@ function createCubie(x, y, z, size, baseGeometry, stickerGeometry) {
   const stickerColors = {};
   group.userData.stickerColors = stickerColors;
 
-  if (x === max) addSticker(group, stickerGeometry, new THREE.Vector3(1, 0, 0), state.colors.R, 'R');
-  if (x === 0) addSticker(group, stickerGeometry, new THREE.Vector3(-1, 0, 0), state.colors.L, 'L');
-  if (y === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 1, 0), state.colors.U, 'U');
-  if (y === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, -1, 0), state.colors.D, 'D');
-  if (z === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, 1), state.colors.F, 'F');
-  if (z === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, -1), state.colors.B, 'B');
+  if (x === max) addSticker(group, stickerGeometry, new THREE.Vector3(1, 0, 0), state.colors.R, 'R', ghost);
+  if (x === 0) addSticker(group, stickerGeometry, new THREE.Vector3(-1, 0, 0), state.colors.L, 'L', ghost);
+  if (y === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 1, 0), state.colors.U, 'U', ghost);
+  if (y === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, -1, 0), state.colors.D, 'D', ghost);
+  if (z === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, 1), state.colors.F, 'F', ghost);
+  if (z === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, -1), state.colors.B, 'B', ghost);
+
+  if (ghost) {
+    baseMaterial.transparent = true;
+    baseMaterial.opacity = 0.08;
+    baseMaterial.depthWrite = false;
+  }
 
   return group;
 }
 
-function addSticker(group, geometry, normal, color, faceKey) {
+function addSticker(group, geometry, normal, color, faceKey, ghost = false) {
   const material = new THREE.MeshStandardMaterial({ color });
   const sticker = new THREE.Mesh(geometry, material);
   sticker.userData.isSticker = true;
@@ -699,6 +779,11 @@ function addSticker(group, geometry, normal, color, faceKey) {
   sticker.scale.set(stickerScale, stickerScale, stickerScale);
   sticker.position.copy(normal.clone().multiplyScalar(STICKER_OFFSET));
   sticker.lookAt(normal);
+  if (ghost) {
+    material.transparent = true;
+    material.opacity = 0.25;
+    material.depthWrite = false;
+  }
   group.add(sticker);
   group.userData.stickerColors[faceKey] = color;
 }
@@ -726,7 +811,7 @@ function frameCube() {
   controls.target.copy(center);
   const dir = new THREE.Vector3(0, 1, 1).normalize();
   camera.up.set(0, 1, 0);
-  camera.position.copy(center.clone().add(dir.multiplyScalar(radius * 2.8)));
+  camera.position.copy(center.clone().add(dir.multiplyScalar(radius * state.cameraDistance)));
   controls.minDistance = radius * 0.8;
   controls.maxDistance = radius * 6;
   controls.update();
@@ -784,7 +869,8 @@ function handleKey(event) {
     const base = mapped.replace("'", '');
     const prime = mapped.includes("'");
     const primeFromShift = event.shiftKey ? !prime : prime;
-    const move = { ...parseMove(primeFromShift ? `${base}'` : base), duration };
+    const label = primeFromShift ? `${base}'` : base;
+    const move = { ...parseMove(mapMirrorLabel(label)), duration };
     enqueueMoves([move], { source: 'user' });
   }
 }
@@ -892,7 +978,8 @@ function layerIndexForMove(move) {
 }
 
 async function enqueueMoves(moves, options = {}) {
-  state.queue.push(...moves);
+  const tagged = moves.map((m) => ({ ...m, source: options.source || m.source }));
+  state.queue.push(...tagged);
   if (options.source === 'user' && state.awaitingSolve && !state.timerRunning) {
     state.awaitingSolve = false;
     state.solveActive = true;
@@ -953,8 +1040,10 @@ function rotateLayer(move) {
 
       cubeGroup.remove(pivot);
       if (state.showNet) renderNet();
+      maybePartyPalette(move);
       if (state.solveActive && isCubeSolved()) {
         state.solveActive = false;
+        onSolveComplete();
         stopTimer();
       }
       resolve();
@@ -1004,8 +1093,10 @@ function rotateCube(move) {
       });
       cubeGroup.remove(pivot);
       if (state.showNet) renderNet();
+      maybePartyPalette(move);
       if (state.solveActive && isCubeSolved()) {
         state.solveActive = false;
+        onSolveComplete();
         stopTimer();
       }
       resolve();
@@ -1277,6 +1368,37 @@ function getStickerScale() {
   return size / STICKER_SIZE;
 }
 
+function updateGhost() {
+  if (ghostGroup) {
+    scene.remove(ghostGroup);
+    ghostGroup = null;
+  }
+  if (!state.ghostMode) return;
+  ghostGroup = buildGhostCube(state.size);
+  scene.add(ghostGroup);
+}
+
+function buildGhostCube(size) {
+  const group = new THREE.Group();
+  const offset = (size - 1) / 2;
+  const baseGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const stickerGeometry = new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
+  for (let x = 0; x < size; x++) {
+    for (let y = 0; y < size; y++) {
+      for (let z = 0; z < size; z++) {
+        const cubie = createCubie(x, y, z, size, baseGeometry, stickerGeometry, { ghost: true });
+        cubie.position.set(
+          (x - offset) * SPACING,
+          (y - offset) * SPACING,
+          (z - offset) * SPACING
+        );
+        group.add(cubie);
+      }
+    }
+  }
+  return group;
+}
+
 function updateExplode() {
   state.cubies.forEach((cubie) => snapCubiePosition(cubie, state.size));
   if (state.showNet) renderNet();
@@ -1396,4 +1518,47 @@ function isCubeSolved() {
     if (!colors.length) return false;
     return colors.every((c) => c === colors[0]);
   });
+}
+
+function onSolveComplete() {
+  if (state.partyMode) {
+    pulseCube();
+  }
+}
+
+function pulseCube() {
+  const start = performance.now();
+  const duration = 240;
+  const base = 1;
+  const peak = 1.08;
+  function animate(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const k = t < 0.5 ? t * 2 : (1 - t) * 2;
+    const scale = base + (peak - base) * k;
+    cubeGroup.scale.set(scale, scale, scale);
+    if (ghostGroup) ghostGroup.scale.set(scale, scale, scale);
+    if (t < 1) requestAnimationFrame(animate);
+    else {
+      cubeGroup.scale.set(1, 1, 1);
+      if (ghostGroup) ghostGroup.scale.set(1, 1, 1);
+    }
+  }
+  requestAnimationFrame(animate);
+}
+
+function maybePartyPalette(move) {
+  if (!state.partyMode) return;
+  if (move.source !== 'user') return;
+  const chance = 0.12;
+  if (Math.random() > chance) return;
+  const paletteNames = Object.keys(PALETTES);
+  const next = paletteNames[Math.floor(Math.random() * paletteNames.length)];
+  state.paletteName = next;
+  state.colors = { ...PALETTES[next] };
+  if (elements.paletteSelect) elements.paletteSelect.value = next;
+  persistPalette();
+  updateStickerColors();
+  updateGhost();
+  if (state.showNet) renderNet();
+  pulseCube();
 }
