@@ -170,6 +170,45 @@
       </div>
     </div>
 
+    <div id="solveModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Detalle de Resolucion</h2>
+          <button id="closeSolve" class="secondary">Cerrar</button>
+        </div>
+        <section class="modal-section">
+          <h3>Tiempo</h3>
+          <div class="hint" id="solveTime">-</div>
+          <div class="hint" id="solveDate">-</div>
+        </section>
+        <section class="modal-section">
+          <h3>Scramble</h3>
+          <div class="scramble" id="solveScramble">-</div>
+        </section>
+        <section class="modal-section">
+          <h3>Reconstruccion</h3>
+          <div class="row replay-controls">
+            <button id="replayPlay">Play</button>
+            <button id="replayPause" class="secondary">Pause</button>
+            <button id="replayPrev" class="secondary">Step -</button>
+            <button id="replayNext" class="secondary">Step +</button>
+            <label class="control">
+              Velocidad
+              <select id="replaySpeed">
+                <option value="0.5">0.5x</option>
+                <option value="1" selected>1x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2">2x</option>
+                <option value="3">3x</option>
+              </select>
+            </label>
+          </div>
+          <div id="replayViewport" class="replay-viewport"></div>
+          <div class="solve-moves" id="solveMoves"></div>
+        </section>
+      </div>
+    </div>
+
     <script type="importmap">
       {
         "imports": {

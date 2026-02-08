@@ -30,6 +30,18 @@ const elements = {
   openHelp: document.querySelector('#openHelp'),
   helpModal: document.querySelector('#helpModal'),
   closeHelp: document.querySelector('#closeHelp'),
+  solveModal: document.querySelector('#solveModal'),
+  closeSolve: document.querySelector('#closeSolve'),
+  solveTime: document.querySelector('#solveTime'),
+  solveDate: document.querySelector('#solveDate'),
+  solveScramble: document.querySelector('#solveScramble'),
+  solveMoves: document.querySelector('#solveMoves'),
+  replayPlay: document.querySelector('#replayPlay'),
+  replayPause: document.querySelector('#replayPause'),
+  replayPrev: document.querySelector('#replayPrev'),
+  replayNext: document.querySelector('#replayNext'),
+  replaySpeed: document.querySelector('#replaySpeed'),
+  replayViewport: document.querySelector('#replayViewport'),
   paletteSelect: document.querySelector('#paletteSelect'),
   resetPalette: document.querySelector('#resetPalette'),
   colorGrid: document.querySelector('#colorGrid'),
@@ -208,6 +220,25 @@ const state = {
   mirrorMode: false,
   ghostMode: false,
   mirrorUntil: 0,
+  solveRecording: [],
+  solveStartPerf: 0,
+  solveStartDate: 0,
+  replay: {
+    active: false,
+    index: 0,
+    moves: [],
+    baseMoves: [],
+    timers: [],
+    speed: 1,
+    scene: null,
+    camera: null,
+    renderer: null,
+    group: null,
+    cubies: [],
+    size: 3,
+    raf: 0,
+    playId: 0,
+  },
   timerRunning: false,
   timerStart: 0,
   timerElapsed: 0,
@@ -330,6 +361,7 @@ function initUI() {
   initSettingsModal();
   initFunModes();
   initHelpModal();
+  initSolveModal();
 
   resetScrambleHistory();
 
@@ -339,6 +371,9 @@ function initUI() {
     state.awaitingSolve = true;
     state.solveActive = false;
     state.timerElapsed = 0;
+    state.solveRecording = [];
+    state.solveStartPerf = 0;
+    state.solveStartDate = 0;
     updateTimerDisplay(0);
     if (state.mirrorMode) {
       state.mirrorUntil = performance.now() + 5000;
@@ -379,6 +414,20 @@ function mapMirrorLabel(label) {
   const mappedBase = mirrorMap[base] || base;
   const mappedPrime = !prime;
   return mappedPrime ? `${mappedBase}'` : mappedBase;
+}
+
+function keyToRotationLabel(key) {
+  const map = {
+    'Ñ': 'y',
+    A: "y'",
+    Y: 'x',
+    T: 'x',
+    B: "x'",
+    N: "x'",
+    Q: 'z',
+    P: "z'",
+  };
+  return map[key] || 'rot';
 }
 
 function initPalette() {
@@ -568,6 +617,39 @@ function initHelpModal() {
   });
 }
 
+function initSolveModal() {
+  const close = () => {
+    stopReplay();
+    elements.solveModal.classList.add('hidden');
+    elements.solveModal.setAttribute('aria-hidden', 'true');
+  };
+  elements.closeSolve.addEventListener('click', close);
+  elements.solveModal.addEventListener('click', (event) => {
+    if (event.target === elements.solveModal) close();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !elements.solveModal.classList.contains('hidden')) {
+      close();
+    }
+  });
+
+  elements.replayPlay.addEventListener('click', () => {
+    startReplay();
+  });
+  elements.replayPause.addEventListener('click', () => {
+    stopReplay();
+  });
+  elements.replayPrev.addEventListener('click', () => {
+    stepReplay(-1);
+  });
+  elements.replayNext.addEventListener('click', () => {
+    stepReplay(1);
+  });
+  elements.replaySpeed.addEventListener('change', () => {
+    state.replay.speed = Number(elements.replaySpeed.value);
+  });
+}
+
 function initSessions() {
   const stored = localStorage.getItem('cubeSessions');
   if (stored) {
@@ -612,7 +694,7 @@ function normalizeSessions() {
     const items = state.sessions[name] || [];
     state.sessions[name] = items.map((item) => {
       if (typeof item === 'number') {
-        return { time: item, scramble: '', at: Date.now() };
+        return { time: item, scramble: '', at: Date.now(), reconstruction: { start: Date.now(), moves: [] } };
       }
       return item;
     });
@@ -661,6 +743,7 @@ function renderSessions() {
       elements.scrambleText.textContent = entry.scramble
         ? entry.scramble
         : '';
+      openSolveModal(entry);
     });
 
     const del = document.createElement('button');
@@ -694,7 +777,7 @@ function buildMoveButtons() {
         const prime = label.includes("'");
         const axisMap = { X: 'x', Y: 'y', Z: 'z' };
         const dir = prime ? 1 : -1;
-        enqueueMoves([{ type: 'cube', axis: axisMap[base], dir }], { source: 'user' });
+        enqueueMoves([{ type: 'cube', axis: axisMap[base], dir, label }], { source: 'user' });
         return;
       }
       const move = parseMove(mapMirrorLabel(label));
@@ -733,6 +816,7 @@ function buildCube(size) {
           (z - offset) * SPACING
         );
         cubie.userData.coord = { x, y, z };
+        cubie.userData.initialCoord = { x, y, z };
         cubeGroup.add(cubie);
         state.cubies.push(cubie);
       }
@@ -803,6 +887,7 @@ function onResize() {
   camera.aspect = clientWidth / clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(clientWidth, clientHeight);
+  renderReplay();
 }
 
 function render() {
@@ -870,7 +955,8 @@ function handleKey(event) {
   const duration = delta > 300 ? 30 : clamp(delta * 0.6, 20, 260);
 
   if (KEY_ROTATIONS[key]) {
-    enqueueMoves([{ type: 'cube', duration, ...KEY_ROTATIONS[key] }], { source: 'user' });
+    const rotationLabel = keyToRotationLabel(key);
+    enqueueMoves([{ type: 'cube', duration, label: rotationLabel, ...KEY_ROTATIONS[key] }], { source: 'user' });
     return;
   }
 
@@ -993,7 +1079,27 @@ async function enqueueMoves(moves, options = {}) {
   if (options.source === 'user' && state.awaitingSolve && !state.timerRunning) {
     state.awaitingSolve = false;
     state.solveActive = true;
+    state.solveStartPerf = performance.now();
+    state.solveStartDate = Date.now();
     startTimer();
+  }
+  if (options.source === 'user') {
+    const baseTime = state.solveStartPerf || performance.now();
+    tagged.forEach((move) => {
+      state.solveRecording.push({
+        label: move.label || move.type || 'move',
+        t: Math.max(0, performance.now() - baseTime),
+        duration: move.duration ?? 0,
+        type: move.type || 'layer',
+        axis: move.axis,
+        face: move.face,
+        dir: move.dir,
+        depth: move.depth,
+        layers: move.layers,
+        layerIndex: move.layerIndex,
+        turns: move.turns,
+      });
+    });
   }
   if (state.rotating) return;
 
@@ -1277,10 +1383,17 @@ function commitTime() {
     time,
     scramble: state.currentScramble,
     at: Date.now(),
+    reconstruction: {
+      start: state.solveStartDate || Date.now(),
+      moves: state.solveRecording.slice(),
+    },
   });
   persistSessions();
   renderSessions();
   state.timerElapsed = 0;
+  state.solveRecording = [];
+  state.solveStartPerf = 0;
+  state.solveStartDate = 0;
   updateTimerDisplay(0);
 }
 
@@ -1565,6 +1678,454 @@ function pulseCube() {
     }
   }
   requestAnimationFrame(animate);
+}
+
+function openSolveModal(entry) {
+  const date = new Date(entry.at || Date.now());
+  elements.solveTime.textContent = `Tiempo: ${formatTime(entry.time)}`;
+  elements.solveDate.textContent = `Fecha: ${date.toLocaleString()}`;
+  elements.solveScramble.textContent = entry.scramble || '-';
+
+  elements.solveMoves.innerHTML = '';
+  const moves = entry.reconstruction?.moves || [];
+  if (!moves.length) {
+    const empty = document.createElement('div');
+    empty.className = 'hint';
+    empty.textContent = 'No hay reconstruccion guardada.';
+    elements.solveMoves.appendChild(empty);
+  } else {
+    moves.forEach((move, idx) => {
+      const row = document.createElement('div');
+      row.className = 'move-row';
+      const t = document.createElement('div');
+      t.textContent = `${(move.t / 1000).toFixed(2)}s`;
+      const label = document.createElement('div');
+      label.textContent = move.label || 'mov';
+      const dur = document.createElement('div');
+      dur.textContent = move.duration ? `${Math.round(move.duration)}ms` : '-';
+      row.append(t, label, dur);
+      elements.solveMoves.appendChild(row);
+    });
+  }
+
+  prepareReplay(entry);
+
+  elements.solveModal.classList.remove('hidden');
+  elements.solveModal.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => {
+    renderReplay();
+    frameReplayCube();
+  });
+}
+
+function prepareReplay(entry) {
+  stopReplay();
+  ensureReplayScene();
+  buildReplayCube(state.size);
+
+  const scrambleText = entry.scramble || '';
+  const baseMoves = scrambleText ? parseScrambleToMoves(scrambleText, state.size) : [];
+  const moves = (entry.reconstruction?.moves || []).map((m) => ({
+    label: m.label,
+    t: m.t || 0,
+    duration: m.duration || 0,
+    type: m.type || 'layer',
+    axis: m.axis,
+    face: m.face,
+    dir: m.dir,
+    depth: m.depth,
+    layers: m.layers,
+    layerIndex: m.layerIndex,
+    turns: m.turns,
+  }));
+
+  state.replay.baseMoves = baseMoves;
+  state.replay.moves = moves;
+  state.replay.index = 0;
+
+  resetReplayCube();
+  applyMovesInstantToReplay(baseMoves);
+  frameReplayCube();
+}
+
+function startReplay() {
+  if (!state.replay.moves.length) return;
+  stopReplay();
+  state.replay.active = true;
+  playFromIndex(state.replay.index);
+}
+
+async function playFromIndex(startIndex) {
+  const playId = ++state.replay.playId;
+  const speed = state.replay.speed || 1;
+  let prev = startIndex > 0 ? (state.replay.moves[startIndex - 1]?.t || 0) : 0;
+
+  for (let i = startIndex; i < state.replay.moves.length; i += 1) {
+    if (!state.replay.active || state.replay.playId !== playId) return;
+    const move = state.replay.moves[i];
+    const delay = Math.max(0, (move.t - prev) / speed);
+    await sleep(delay);
+    if (!state.replay.active || state.replay.playId !== playId) return;
+    await applyMoveAnimatedToReplay(move);
+    state.replay.index = i + 1;
+    prev = move.t;
+  }
+}
+
+function stopReplay() {
+  state.replay.active = false;
+  state.replay.playId += 1;
+  state.replay.timers.forEach((t) => clearTimeout(t));
+  state.replay.timers = [];
+}
+
+async function stepReplay(direction) {
+  stopReplay();
+  if (direction === 1 && state.replay.index < state.replay.moves.length) {
+    const move = state.replay.moves[state.replay.index];
+    await applyMoveAnimatedToReplay(move);
+    state.replay.index += 1;
+    return;
+  }
+  if (direction === -1 && state.replay.index > 0) {
+    const move = inverseReplayMove(state.replay.moves[state.replay.index - 1]);
+    await applyMoveAnimatedToReplay(move);
+    state.replay.index -= 1;
+    return;
+  }
+}
+
+function ensureReplayScene() {
+  if (state.replay.scene) return;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#0b1120');
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+  camera.position.set(6, 6, 6);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  elements.replayViewport.innerHTML = '';
+  renderer.setClearColor('#0b1120');
+  elements.replayViewport.appendChild(renderer.domElement);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+  directional.position.set(8, 10, 6);
+  scene.add(ambient, directional);
+
+  state.replay.scene = scene;
+  state.replay.camera = camera;
+  state.replay.renderer = renderer;
+  renderReplay();
+}
+
+function renderReplay() {
+  if (!state.replay.renderer || !state.replay.scene || !state.replay.camera) return;
+  const { clientWidth, clientHeight } = elements.replayViewport;
+  if (clientWidth && clientHeight) {
+    state.replay.camera.aspect = clientWidth / clientHeight;
+    state.replay.camera.updateProjectionMatrix();
+    state.replay.renderer.setSize(clientWidth, clientHeight);
+  }
+  if (state.replay.group) {
+    state.replay.group.position.set(0, 0, 0);
+  }
+  state.replay.renderer.render(state.replay.scene, state.replay.camera);
+}
+
+function buildReplayCube(size) {
+  if (state.replay.group) {
+    state.replay.scene.remove(state.replay.group);
+  }
+  const group = new THREE.Group();
+  const cubies = [];
+  const offset = (size - 1) / 2;
+  const baseGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const stickerGeometry = new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
+  for (let x = 0; x < size; x++) {
+    for (let y = 0; y < size; y++) {
+      for (let z = 0; z < size; z++) {
+        const cubie = createCubie(x, y, z, size, baseGeometry, stickerGeometry);
+        cubie.userData.coord = { x, y, z };
+        cubie.userData.initialCoord = { x, y, z };
+        cubie.position.set(
+          (x - offset) * SPACING,
+          (y - offset) * SPACING,
+          (z - offset) * SPACING
+        );
+        group.add(cubie);
+        cubies.push(cubie);
+      }
+    }
+  }
+  state.replay.group = group;
+  state.replay.cubies = cubies;
+  state.replay.size = size;
+  state.replay.scene.add(group);
+  frameReplayCube();
+}
+
+function frameReplayCube() {
+  const { group, camera } = state.replay;
+  if (!group || !camera) return;
+  const box = new THREE.Box3().setFromObject(group);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const radius = Math.max(size.x, size.y, size.z) * 0.8;
+  camera.position.copy(center.clone().add(new THREE.Vector3(0, 1, 1).normalize().multiplyScalar(radius * 2.4)));
+  camera.lookAt(center);
+  group.position.sub(center);
+  renderReplay();
+}
+
+function resetReplayCube() {
+  const size = state.replay.size;
+  const offset = (size - 1) / 2;
+  state.replay.cubies.forEach((cubie) => {
+    const initial = cubie.userData.initialCoord || cubie.userData.coord;
+    cubie.userData.coord = { ...initial };
+    cubie.position.set(
+      (initial.x - offset) * SPACING,
+      (initial.y - offset) * SPACING,
+      (initial.z - offset) * SPACING
+    );
+    cubie.quaternion.identity();
+  });
+  renderReplay();
+}
+
+function applyMovesInstantToReplay(moves) {
+  moves.forEach((move) => applyMoveInstantToReplay(move));
+}
+
+function applyMoveInstantToReplay(move) {
+  const m = normalizeReplayMove(move);
+  if (!m) return;
+  if (m.type === 'cube') {
+    applyCubeInstantToReplay(m);
+  } else {
+    applyLayerInstantToReplay(m);
+  }
+  renderReplay();
+}
+
+function applyMoveAnimatedToReplay(move) {
+  const m = normalizeReplayMove(move);
+  if (!m) return;
+  const duration = Math.max(60, Math.min(260, m.duration || 120));
+  if (m.type === 'cube') {
+    return rotateCubeOnReplay(m, duration);
+  }
+  return rotateLayerOnReplay(m, duration);
+}
+
+function normalizeReplayMove(move) {
+  if (!move) return null;
+  if (move.axis && typeof move.dir === 'number') {
+    return {
+      label: move.label,
+      axis: move.axis,
+      face: move.face,
+      dir: move.dir,
+      depth: move.depth,
+      layers: move.layers,
+      layerIndex: move.layerIndex,
+      turns: move.turns || 1,
+      type: move.type || (move.face ? 'layer' : 'cube'),
+    };
+  }
+  if (move.type === 'cube') {
+    const parsed = parseRotationLabel(move.label);
+    if (!parsed) return null;
+    return { ...parsed, type: 'cube', turns: move.turns || parsed.turns || 1 };
+  }
+  return parseMoveLabel(move.label);
+}
+
+function parseMoveLabel(label) {
+  if (!label) return null;
+  const token = label.trim();
+  let turns = 1;
+  let prime = false;
+  let base = token;
+  if (base.endsWith('2')) {
+    turns = 2;
+    base = base.slice(0, -1);
+  }
+  if (base.endsWith("'")) {
+    prime = true;
+    base = base.slice(0, -1);
+  }
+
+  if (['M', 'r', 'l'].includes(base)) {
+    const move = parseMove(prime ? `${base}'` : base);
+    return { ...move, turns };
+  }
+
+  const config = MOVE_AXIS[base];
+  if (!config) return null;
+  const dir = prime ? -config.dir : config.dir;
+  return {
+    label,
+    axis: config.axis,
+    face: config.face,
+    dir,
+    depth: 1,
+    turns,
+  };
+}
+
+function parseRotationLabel(label) {
+  if (!label) return null;
+  let turns = 1;
+  let prime = false;
+  let base = label.trim().toLowerCase();
+  if (base.endsWith('2')) {
+    turns = 2;
+    base = base.slice(0, -1);
+  }
+  if (base.endsWith("'")) {
+    prime = true;
+    base = base.slice(0, -1);
+  }
+  const axisMap = { x: 'x', y: 'y', z: 'z' };
+  if (!axisMap[base]) return null;
+  const dir = prime ? 1 : -1;
+  return { label, axis: axisMap[base], dir, turns };
+}
+
+function inverseReplayMove(move) {
+  if (!move) return move;
+  const m = { ...move };
+  if (typeof m.dir === 'number') m.dir *= -1;
+  if (m.label) {
+    if (m.label.includes("'")) {
+      m.label = m.label.replace("'", '');
+    } else if (m.label.endsWith('2')) {
+      // keep double turns as is
+    } else {
+      m.label = `${m.label}'`;
+    }
+  }
+  return m;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function rotateLayerOnReplay(move, duration) {
+  return new Promise((resolve) => {
+  const axis = move.axis;
+  const layer = layerIndexForMove(move);
+  const layers = Array.isArray(layer) ? layer : [layer];
+  const turns = move.turns ?? 1;
+  const angle = move.dir * (Math.PI / 2) * turns;
+  const pivot = new THREE.Group();
+  const affected = state.replay.cubies.filter((c) => layers.includes(c.userData.coord[axis]));
+  state.replay.group.add(pivot);
+  affected.forEach((cubie) => pivot.attach(cubie));
+  const start = performance.now();
+
+  function animate(now) {
+    const t = Math.min((now - start) / duration, 1);
+    pivot.rotation[axis] = angle * t;
+    renderReplay();
+    if (t < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      pivot.rotation[axis] = angle;
+      pivot.updateMatrixWorld();
+      affected.forEach((cubie) => {
+        cubie.applyMatrix4(pivot.matrix);
+        updateCoord(cubie, axis, move.dir, state.replay.size, turns);
+        snapCubiePosition(cubie, state.replay.size);
+        state.replay.group.add(cubie);
+      });
+      state.replay.group.remove(pivot);
+      renderReplay();
+      resolve();
+    }
+  }
+
+  requestAnimationFrame(animate);
+  });
+}
+
+function rotateCubeOnReplay(move, duration) {
+  return new Promise((resolve) => {
+  const axis = move.axis;
+  const turns = move.turns ?? 1;
+  const angle = move.dir * (Math.PI / 2) * turns;
+  const pivot = new THREE.Group();
+  state.replay.group.add(pivot);
+  state.replay.cubies.forEach((cubie) => pivot.attach(cubie));
+  const start = performance.now();
+
+  function animate(now) {
+    const t = Math.min((now - start) / duration, 1);
+    pivot.rotation[axis] = angle * t;
+    renderReplay();
+    if (t < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      pivot.rotation[axis] = angle;
+      pivot.updateMatrixWorld();
+      state.replay.cubies.forEach((cubie) => {
+        cubie.applyMatrix4(pivot.matrix);
+        updateCoord(cubie, axis, move.dir, state.replay.size, turns);
+        snapCubiePosition(cubie, state.replay.size);
+        state.replay.group.add(cubie);
+      });
+      state.replay.group.remove(pivot);
+      renderReplay();
+      resolve();
+    }
+  }
+
+  requestAnimationFrame(animate);
+  });
+}
+
+function applyLayerInstantToReplay(move) {
+  const axis = move.axis;
+  const layer = layerIndexForMove(move);
+  const layers = Array.isArray(layer) ? layer : [layer];
+  const pivot = new THREE.Group();
+  const affected = state.replay.cubies.filter((c) => layers.includes(c.userData.coord[axis]));
+  state.replay.group.add(pivot);
+  affected.forEach((cubie) => {
+    pivot.attach(cubie);
+  });
+  const turns = move.turns ?? 1;
+  const angle = move.dir * (Math.PI / 2) * turns;
+  pivot.rotation[axis] = angle;
+  pivot.updateMatrixWorld();
+  affected.forEach((cubie) => {
+    cubie.applyMatrix4(pivot.matrix);
+    updateCoord(cubie, axis, move.dir, state.replay.size, turns);
+    snapCubiePosition(cubie, state.replay.size);
+    state.replay.group.add(cubie);
+  });
+  state.replay.group.remove(pivot);
+}
+
+function applyCubeInstantToReplay(move) {
+  const axis = move.axis;
+  const pivot = new THREE.Group();
+  state.replay.group.add(pivot);
+  state.replay.cubies.forEach((cubie) => {
+    pivot.attach(cubie);
+  });
+  const turns = move.turns ?? 1;
+  const angle = move.dir * (Math.PI / 2) * turns;
+  pivot.rotation[axis] = angle;
+  pivot.updateMatrixWorld();
+  state.replay.cubies.forEach((cubie) => {
+    cubie.applyMatrix4(pivot.matrix);
+    updateCoord(cubie, axis, move.dir, state.replay.size, turns);
+    snapCubiePosition(cubie, state.replay.size);
+    state.replay.group.add(cubie);
+  });
+  state.replay.group.remove(pivot);
 }
 
 function maybePartyPalette(move) {
