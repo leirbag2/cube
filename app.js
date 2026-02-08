@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
+import { randomScrambleForEvent } from 'https://cdn.cubing.net/v0/js/cubing/scramble';
 
 const elements = {
   size: document.querySelector('#size'),
@@ -10,9 +11,10 @@ const elements = {
   layerValue: document.querySelector('#layerValue'),
   renderer: document.querySelector('#renderer'),
   moveButtons: document.querySelector('#moveButtons'),
-  scramble: document.querySelector('#scramble'),
   applyScramble: document.querySelector('#applyScramble'),
   clearScramble: document.querySelector('#clearScramble'),
+  prevScramble: document.querySelector('#prevScramble'),
+  nextScramble: document.querySelector('#nextScramble'),
   scrambleText: document.querySelector('#scrambleText'),
   timer: document.querySelector('#timer'),
   toggleXray: document.querySelector('#toggleXray'),
@@ -22,6 +24,9 @@ const elements = {
   openSettings: document.querySelector('#openSettings'),
   settingsModal: document.querySelector('#settingsModal'),
   closeSettings: document.querySelector('#closeSettings'),
+  openHelp: document.querySelector('#openHelp'),
+  helpModal: document.querySelector('#helpModal'),
+  closeHelp: document.querySelector('#closeHelp'),
   paletteSelect: document.querySelector('#paletteSelect'),
   resetPalette: document.querySelector('#resetPalette'),
   colorGrid: document.querySelector('#colorGrid'),
@@ -37,7 +42,6 @@ const elements = {
   ao12: document.querySelector('#ao12'),
   count: document.querySelector('#count'),
   times: document.querySelector('#times'),
-  scrambleDetail: document.querySelector('#scrambleDetail'),
 };
 
 let scene;
@@ -183,6 +187,8 @@ const state = {
   rotating: false,
   scrambleMoves: [],
   currentScramble: '',
+  scrambleHistory: [],
+  scrambleIndex: -1,
   xray: false,
   exploded: false,
   showNet: true,
@@ -289,6 +295,7 @@ function initUI() {
     buildCube(state.size);
     frameCube();
     updateTitle(state.size);
+    resetScrambleHistory();
   });
 
   elements.resetView.addEventListener('click', () => {
@@ -305,12 +312,9 @@ function initUI() {
   initPalette();
   initEdges();
   initSettingsModal();
+  initHelpModal();
 
-  elements.scramble.addEventListener('click', () => {
-    state.scrambleMoves = generateScramble();
-    state.currentScramble = stringifyMoves(state.scrambleMoves);
-    elements.scrambleText.textContent = state.currentScramble;
-  });
+  resetScrambleHistory();
 
   elements.applyScramble.addEventListener('click', async () => {
     if (!state.scrambleMoves.length) return;
@@ -322,9 +326,23 @@ function initUI() {
   });
 
   elements.clearScramble.addEventListener('click', () => {
-    state.scrambleMoves = [];
-    state.currentScramble = '';
-    elements.scrambleText.textContent = '';
+    resetScrambleHistory();
+  });
+
+  elements.prevScramble.addEventListener('click', () => {
+    if (state.scrambleHistory.length === 0) return;
+    state.scrambleIndex = Math.max(0, state.scrambleIndex - 1);
+    syncScrambleFromHistory();
+  });
+
+  elements.nextScramble.addEventListener('click', () => {
+    if (state.scrambleHistory.length === 0) return;
+    if (state.scrambleIndex < state.scrambleHistory.length - 1) {
+      state.scrambleIndex += 1;
+      syncScrambleFromHistory();
+      return;
+    }
+    addNewScramble();
   });
 
   document.addEventListener('keydown', handleKey);
@@ -456,6 +474,28 @@ function initSettingsModal() {
   });
 }
 
+function initHelpModal() {
+  const open = () => {
+    elements.helpModal.classList.remove('hidden');
+    elements.helpModal.setAttribute('aria-hidden', 'false');
+  };
+  const close = () => {
+    elements.helpModal.classList.add('hidden');
+    elements.helpModal.setAttribute('aria-hidden', 'true');
+  };
+
+  elements.openHelp.addEventListener('click', open);
+  elements.closeHelp.addEventListener('click', close);
+  elements.helpModal.addEventListener('click', (event) => {
+    if (event.target === elements.helpModal) close();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !elements.helpModal.classList.contains('hidden')) {
+      close();
+    }
+  });
+}
+
 function initSessions() {
   const stored = localStorage.getItem('cubeSessions');
   if (stored) {
@@ -524,7 +564,6 @@ function renderSessions() {
   elements.avg.textContent = times.length ? formatTime(average(times)) : '-';
   elements.ao5.textContent = formatAverage(times, 5);
   elements.ao12.textContent = formatAverage(times, 12);
-  elements.scrambleDetail.textContent = 'Scramble: -';
 
   elements.times.innerHTML = '';
   entries.slice().reverse().forEach((entry, index) => {
@@ -537,9 +576,9 @@ function renderSessions() {
     main.textContent = `#${entries.length - index}  ${formatTime(entry.time)}`;
 
     main.addEventListener('click', () => {
-      elements.scrambleDetail.textContent = entry.scramble
-        ? `Scramble: ${entry.scramble}`
-        : 'Scramble: -';
+      elements.scrambleText.textContent = entry.scramble
+        ? entry.scramble
+        : '';
     });
 
     const del = document.createElement('button');
@@ -795,6 +834,53 @@ function parseMove(label) {
   };
 }
 
+function parseScrambleToMoves(text, size) {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  const moves = [];
+  tokens.forEach((token) => {
+    let t = token;
+    let turns = 1;
+    let prime = false;
+
+    if (t.endsWith("2")) {
+      turns = 2;
+      t = t.slice(0, -1);
+    }
+    if (t.endsWith("'")) {
+      prime = true;
+      t = t.slice(0, -1);
+    }
+
+    const match = t.match(/^(\d+)?([rludfb])w?$/i);
+    if (!match) return;
+    const width = match[1] ? Math.max(1, Number(match[1])) : (t.toLowerCase().includes('w') ? 2 : 1);
+    const face = match[2].toUpperCase();
+    const config = MOVE_AXIS[face];
+    if (!config) return;
+    const dir = prime ? -config.dir : config.dir;
+    const layers = buildLayers(face, width, size);
+
+    moves.push({
+      label: token,
+      axis: config.axis,
+      face: config.face,
+      dir,
+      layers,
+      turns,
+    });
+  });
+  return moves;
+}
+
+function buildLayers(face, width, size) {
+  const max = size - 1;
+  const clamped = Math.min(width, size);
+  if (face === 'R' || face === 'U' || face === 'F') {
+    return Array.from({ length: clamped }, (_, i) => max - i);
+  }
+  return Array.from({ length: clamped }, (_, i) => i);
+}
+
 function layerIndexForMove(move) {
   if (Array.isArray(move.layers)) return move.layers;
   if (typeof move.layerIndex === 'number') return move.layerIndex;
@@ -830,7 +916,8 @@ function rotateLayer(move) {
   return new Promise((resolve) => {
     const axis = move.axis;
     const layer = layerIndexForMove(move);
-    const angle = move.dir * (Math.PI / 2);
+    const turns = move.turns ?? 1;
+    const angle = move.dir * (Math.PI / 2) * turns;
 
     const pivot = new THREE.Group();
     const layers = Array.isArray(layer) ? layer : [layer];
@@ -859,7 +946,7 @@ function rotateLayer(move) {
 
       affected.forEach((cubie) => {
         cubie.applyMatrix4(pivot.matrix);
-        updateCoord(cubie, axis, move.dir, state.size);
+        updateCoord(cubie, axis, move.dir, state.size, turns);
         snapCubiePosition(cubie, state.size);
         cubeGroup.add(cubie);
       });
@@ -885,7 +972,8 @@ function centerLayerIndex(size) {
 function rotateCube(move) {
   return new Promise((resolve) => {
     const axis = move.axis;
-    const angle = move.dir * (Math.PI / 2);
+    const turns = move.turns ?? 1;
+    const angle = move.dir * (Math.PI / 2) * turns;
     const duration = move.duration ?? 220;
     const start = performance.now();
 
@@ -910,7 +998,7 @@ function rotateCube(move) {
       pivot.updateMatrixWorld();
       state.cubies.forEach((cubie) => {
         cubie.applyMatrix4(pivot.matrix);
-        updateCoord(cubie, axis, move.dir, state.size);
+        updateCoord(cubie, axis, move.dir, state.size, turns);
         snapCubiePosition(cubie, state.size);
         cubeGroup.add(cubie);
       });
@@ -932,30 +1020,29 @@ function clamp(value, min, max) {
 }
 
 
-function updateCoord(cubie, axis, dir, size) {
+function updateCoord(cubie, axis, dir, size, turns = 1) {
   const coord = cubie.userData.coord;
   const offset = (size - 1) / 2;
-  const x = coord.x - offset;
-  const y = coord.y - offset;
-  const z = coord.z - offset;
+  let nx = coord.x - offset;
+  let ny = coord.y - offset;
+  let nz = coord.z - offset;
 
-  let nx = x;
-  let ny = y;
-  let nz = z;
-
-  if (axis === 'x') {
-    ny = dir === 1 ? -z : z;
-    nz = dir === 1 ? y : -y;
-  }
-
-  if (axis === 'y') {
-    nx = dir === 1 ? z : -z;
-    nz = dir === 1 ? -x : x;
-  }
-
-  if (axis === 'z') {
-    nx = dir === 1 ? -y : y;
-    ny = dir === 1 ? x : -x;
+  for (let i = 0; i < turns; i++) {
+    const x = nx;
+    const y = ny;
+    const z = nz;
+    if (axis === 'x') {
+      ny = dir === 1 ? -z : z;
+      nz = dir === 1 ? y : -y;
+    }
+    if (axis === 'y') {
+      nx = dir === 1 ? z : -z;
+      nz = dir === 1 ? -x : x;
+    }
+    if (axis === 'z') {
+      nx = dir === 1 ? -y : y;
+      ny = dir === 1 ? x : -x;
+    }
   }
 
   coord.x = Math.round(nx + offset);
@@ -995,6 +1082,58 @@ function generateScramble() {
 
 function stringifyMoves(moves) {
   return moves.map((m) => (m.depth > 1 ? `${m.depth}${m.label}` : m.label)).join(' ');
+}
+
+function pushScramble(text, moves) {
+  const entry = {
+    moves: moves.map((m) => ({ ...m })),
+    text,
+  };
+  state.scrambleHistory.push(entry);
+  state.scrambleIndex = state.scrambleHistory.length - 1;
+  syncScrambleFromHistory();
+}
+
+function syncScrambleFromHistory() {
+  const entry = state.scrambleHistory[state.scrambleIndex];
+  if (!entry) return;
+  state.scrambleMoves = entry.moves.map((m) => ({ ...m }));
+  state.currentScramble = entry.text;
+  elements.scrambleText.textContent = entry.text;
+}
+
+async function addNewScramble() {
+  const { text, moves } = await generateOfficialScramble(state.size);
+  pushScramble(text, moves);
+}
+
+function resetScrambleHistory() {
+  state.scrambleHistory = [];
+  state.scrambleIndex = -1;
+  addNewScramble();
+}
+
+async function generateOfficialScramble(size) {
+  const eventMap = {
+    2: '222',
+    3: '333',
+    4: '444',
+    5: '555',
+    6: '666',
+    7: '777',
+  };
+  if (eventMap[size]) {
+    try {
+      const alg = await randomScrambleForEvent(eventMap[size]);
+      const text = alg.toString();
+      const moves = parseScrambleToMoves(text, size);
+      return { text, moves };
+    } catch (err) {
+      // fallback below
+    }
+  }
+  const moves = generateScramble();
+  return { text: stringifyMoves(moves), moves };
 }
 
 function toggleTimer() {

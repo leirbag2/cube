@@ -43,6 +43,8 @@ html {
   padding: 16px 28px;
   background: linear-gradient(120deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.85));
   border-bottom: 1px solid var(--border);
+  gap: 16px;
+  position: relative;
 }
 
 .brand {
@@ -57,6 +59,16 @@ html {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.center-controls {
+  flex: 1;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.right-controls {
+  justify-content: flex-end;
 }
 
 .control {
@@ -157,10 +169,18 @@ button.secondary {
 
 .main {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 360px 1fr;
   gap: 20px;
   padding: 20px;
   min-height: 0;
+}
+
+.panel {
+  order: 0;
+}
+
+.scene {
+  order: 1;
 }
 
 .scene {
@@ -208,6 +228,8 @@ button.secondary {
   gap: 16px;
   overflow-y: auto;
   padding-right: 4px;
+  grid-auto-rows: min-content;
+  align-content: start;
 }
 
 .card {
@@ -217,6 +239,12 @@ button.secondary {
   padding: 16px;
   display: grid;
   gap: 12px;
+}
+
+.sessions-card {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  min-height: 420px;
 }
 
 .card h2 {
@@ -231,6 +259,17 @@ button.secondary {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.session-row {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.session-row input,
+.session-row select {
+  flex: 1;
+  min-width: 140px;
 }
 
 .color-grid {
@@ -257,13 +296,13 @@ button.secondary {
 
 .move-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
 }
 
 .move-grid button {
-  padding: 8px;
-  font-size: 13px;
+  padding: 6px;
+  font-size: 11px;
 }
 
 .scramble {
@@ -274,14 +313,43 @@ button.secondary {
   min-height: 48px;
 }
 
+.scramble-top {
+  min-height: 0;
+  max-width: 420px;
+  text-align: center;
+  font-size: 12px;
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
 .times {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   color: var(--text);
-  max-height: 140px;
+  min-height: 220px;
+  max-height: 100%;
   overflow-y: auto;
   display: grid;
   gap: 6px;
+}
+
+.times::-webkit-scrollbar {
+  width: 8px;
+}
+
+.times::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 10px;
+}
+
+.times::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.7), rgba(249, 115, 22, 0.6));
+  border-radius: 10px;
+}
+
+.times {
+  scrollbar-color: rgba(56, 189, 248, 0.7) rgba(15, 23, 42, 0.4);
+  scrollbar-width: thin;
 }
 
 .time-row {
@@ -336,14 +404,16 @@ button.secondary {
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  max-width: 70%;
+  max-width: 80%;
   text-align: center;
-  z-index: 2;
+  z-index: 3;
+  pointer-events: none;
 }
 
-.stats {
+.stats-grid {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
   font-size: 12px;
   color: var(--muted);
 }

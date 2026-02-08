@@ -10,7 +10,14 @@
     <div id="app">
       <header class="topbar">
         <div class="brand">Cubo NxN</div>
-        <div class="controls">
+        <div class="controls center-controls" id="scrambleControls">
+          <button id="prevScramble" class="secondary">◀</button>
+          <div id="scrambleText" class="scramble scramble-top"></div>
+          <button id="nextScramble" class="secondary">▶</button>
+          <button id="applyScramble">Aplicar</button>
+          <button id="clearScramble">Limpiar</button>
+        </div>
+        <div class="controls right-controls">
           <label class="control">
             Tamaño
             <input id="size" type="range" min="2" max="11" value="3" />
@@ -19,6 +26,7 @@
           <button id="rebuild">Recrear</button>
           <button id="resetView">Centrar vista</button>
           <button id="openSettings" class="secondary">Configuración</button>
+          <button id="openHelp" class="secondary">Ayuda</button>
         </div>
       </header>
 
@@ -29,12 +37,11 @@
             <div class="timer" id="timer">0.000</div>
             <div class="timer-hint">Espacio para iniciar/detener</div>
           </div>
-          <div id="scrambleDetail" class="scramble-detail scramble-overlay">Scramble: -</div>
           <div id="netView" class="net-view net-overlay hidden"></div>
         </section>
 
         <aside class="panel">
-          <section class="card">
+          <section class="card sessions-card">
             <h2>Movimientos</h2>
             <div class="row">
               <label class="control">
@@ -49,27 +56,18 @@
             </div>
           </section>
 
-          <section class="card">
-            <h2>Scramble</h2>
-            <div class="row">
-              <button id="scramble">Scramble</button>
-              <button id="applyScramble">Aplicar</button>
-              <button id="clearScramble">Limpiar</button>
-            </div>
-            <div id="scrambleText" class="scramble"></div>
-          </section>
 
           <section class="card">
             <h2>Sesiones</h2>
-            <div class="row">
+            <div class="row session-row">
               <input id="sessionName" placeholder="Nombre" />
               <button id="createSession">Crear</button>
             </div>
-            <div class="row">
+            <div class="row session-row">
               <select id="sessionSelect"></select>
               <button id="deleteSession">Borrar</button>
             </div>
-            <div class="stats">
+            <div class="stats-grid">
               <div>Mejor: <span id="best">-</span></div>
               <div>Promedio: <span id="avg">-</span></div>
               <div>Ao5: <span id="ao5">-</span></div>
@@ -77,16 +75,6 @@
               <div>Solves: <span id="count">0</span></div>
             </div>
             <div id="times" class="times"></div>
-          </section>
-
-          <section class="card">
-            <h2>Ayuda</h2>
-            <div class="hint">
-              Mouse: arrastra para rotar la vista. Rueda para zoom.
-            </div>
-            <div class="hint">
-              Espacio inicia/detiene el cronometro. Enter registra el tiempo.
-            </div>
           </section>
 
         </aside>
@@ -126,6 +114,36 @@
               <input id="edgeThickness" type="range" min="0" max="100" value="70" />
               <span id="edgeValue">70</span>
             </label>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="helpModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Ayuda</h2>
+          <button id="closeHelp" class="secondary">Cerrar</button>
+        </div>
+        <section class="modal-section">
+          <h3>Mouse</h3>
+          <div class="hint">Arrastra para rotar la vista. Rueda para zoom.</div>
+        </section>
+        <section class="modal-section">
+          <h3>Timer</h3>
+          <div class="hint">Espacio inicia/detiene. Enter registra tiempo manual.</div>
+          <div class="hint">Al aplicar scramble, el primer movimiento inicia el timer y al resolver se guarda.</div>
+        </section>
+        <section class="modal-section">
+          <h3>Teclado</h3>
+          <div class="hint">
+            I/K (R/R'), U/M (r/r'), J (U), F (U'), L/S (D'/D), V (L), R/E (L'), D (L), H/G (F/F'), W (B), O (B'), X (M).
+          </div>
+          <div class="hint">
+            Rotaciones: Ñ (Y), A (Y'), Y/T (X), B/N (X'), Q (Z), P (Z').
+          </div>
+          <div class="hint">
+            Capa activa: números 1-9 o `-`/`=` para ajustar.
           </div>
         </section>
       </div>
