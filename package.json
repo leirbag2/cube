@@ -4,6 +4,7 @@
   "description": "",
   "main": "app.js",
   "scripts": {
+    "build": "npx esbuild app.js --bundle --minify --format=iife --global-name=CubeApp --outfile=dist/app.js && cp index.html styles.css dist/",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

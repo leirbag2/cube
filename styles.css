@@ -120,6 +120,20 @@ button.secondary {
   border: 1px solid var(--border);
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: none;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .modal {
   position: fixed;
   inset: 0;

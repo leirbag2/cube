@@ -72,13 +72,24 @@
               <select id="sessionSelect"></select>
               <button id="deleteSession">Borrar</button>
             </div>
+            <div class="row session-row">
+              <button id="exportData">Exportar</button>
+              <button id="importData" class="secondary">Importar</button>
+              <input id="importFile" type="file" accept="application/json" hidden />
+            </div>
             <div class="stats-grid">
               <div>Mejor: <span id="best">-</span></div>
+              <div>Peor: <span id="worst">-</span></div>
               <div>Promedio: <span id="avg">-</span></div>
+              <div>Mediana: <span id="median">-</span></div>
               <div>Ao5: <span id="ao5">-</span></div>
               <div>Ao12: <span id="ao12">-</span></div>
+              <div>Mejor ao5: <span id="bestAo5">-</span></div>
+              <div>Mejor ao12: <span id="bestAo12">-</span></div>
+              <div>Desv. Std: <span id="stddev">-</span></div>
               <div>TPS prom: <span id="avgTps">-</span></div>
               <div>Solves: <span id="count">0</span></div>
+              <div>Último: <span id="last">-</span></div>
             </div>
             <div id="times" class="times"></div>
           </section>
@@ -133,6 +144,59 @@
           </div>
         </section>
         <section class="modal-section">
+          <h3>Iluminación</h3>
+          <div class="row">
+            <button id="toggleLightFollow">Luz sigue cámara</button>
+          </div>
+          <div class="row">
+            <label class="control">
+              Key X
+              <input id="lightKeyX" type="range" min="-20" max="20" value="6" />
+              <span id="lightKeyXValue">6</span>
+            </label>
+            <label class="control">
+              Key Y
+              <input id="lightKeyY" type="range" min="-20" max="20" value="9" />
+              <span id="lightKeyYValue">9</span>
+            </label>
+            <label class="control">
+              Key Z
+              <input id="lightKeyZ" type="range" min="-20" max="20" value="10" />
+              <span id="lightKeyZValue">10</span>
+            </label>
+          </div>
+          <div class="row">
+            <label class="control">
+              Fill X
+              <input id="lightFillX" type="range" min="-20" max="20" value="-8" />
+              <span id="lightFillXValue">-8</span>
+            </label>
+            <label class="control">
+              Fill Y
+              <input id="lightFillY" type="range" min="-20" max="20" value="4" />
+              <span id="lightFillYValue">4</span>
+            </label>
+            <label class="control">
+              Fill Z
+              <input id="lightFillZ" type="range" min="-20" max="20" value="-6" />
+              <span id="lightFillZValue">-6</span>
+            </label>
+          </div>
+          <div class="hint">Puedes ver y ajustar las coordenadas de las luces.</div>
+        </section>
+        <section class="modal-section">
+          <h3>Cubo</h3>
+          <div class="row">
+            <label class="control">
+              Tipo
+              <select id="cubeTypeSelect">
+                <option value="classic">Clásico</option>
+                <option value="mirror">Mirror (metálico)</option>
+              </select>
+            </label>
+          </div>
+        </section>
+        <section class="modal-section">
           <h3>Modos</h3>
           <div class="row">
             <button id="toggleParty">Party</button>
@@ -142,6 +206,19 @@
           <div class="hint">Party: cambia paleta al resolver + efecto pop.</div>
           <div class="hint">Mirror: invierte controles por unos segundos.</div>
           <div class="hint">Ghost: muestra el estado resuelto en transparencia.</div>
+          <div class="row">
+            <button id="deformNone">Sin deformar</button>
+            <button id="deformJelly">Gelatina</button>
+            <button id="deformTwist">Twist</button>
+            <button id="deformWave">Wave</button>
+          </div>
+          <div class="row">
+            <label class="control">
+              Intensidad
+              <input id="deformStrength" type="range" min="0" max="100" value="35" />
+              <span id="deformValue">0.35</span>
+            </label>
+          </div>
         </section>
       </div>
     </div>

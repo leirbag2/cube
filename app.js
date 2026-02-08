@@ -42,6 +42,13 @@ const elements = {
   toggleParty: document.querySelector('#toggleParty'),
   toggleMirror: document.querySelector('#toggleMirror'),
   toggleGhost: document.querySelector('#toggleGhost'),
+  cubeTypeSelect: document.querySelector('#cubeTypeSelect'),
+  deformNone: document.querySelector('#deformNone'),
+  deformJelly: document.querySelector('#deformJelly'),
+  deformTwist: document.querySelector('#deformTwist'),
+  deformWave: document.querySelector('#deformWave'),
+  deformStrength: document.querySelector('#deformStrength'),
+  deformValue: document.querySelector('#deformValue'),
   openHelp: document.querySelector('#openHelp'),
   helpModal: document.querySelector('#helpModal'),
   closeHelp: document.querySelector('#closeHelp'),
@@ -67,16 +74,38 @@ const elements = {
   edgeValue: document.querySelector('#edgeValue'),
   cameraDistance: document.querySelector('#cameraDistance'),
   cameraValue: document.querySelector('#cameraValue'),
+  toggleLightFollow: document.querySelector('#toggleLightFollow'),
+  lightKeyX: document.querySelector('#lightKeyX'),
+  lightKeyY: document.querySelector('#lightKeyY'),
+  lightKeyZ: document.querySelector('#lightKeyZ'),
+  lightKeyXValue: document.querySelector('#lightKeyXValue'),
+  lightKeyYValue: document.querySelector('#lightKeyYValue'),
+  lightKeyZValue: document.querySelector('#lightKeyZValue'),
+  lightFillX: document.querySelector('#lightFillX'),
+  lightFillY: document.querySelector('#lightFillY'),
+  lightFillZ: document.querySelector('#lightFillZ'),
+  lightFillXValue: document.querySelector('#lightFillXValue'),
+  lightFillYValue: document.querySelector('#lightFillYValue'),
+  lightFillZValue: document.querySelector('#lightFillZValue'),
   sessionName: document.querySelector('#sessionName'),
   createSession: document.querySelector('#createSession'),
   sessionSelect: document.querySelector('#sessionSelect'),
   deleteSession: document.querySelector('#deleteSession'),
+  exportData: document.querySelector('#exportData'),
+  importData: document.querySelector('#importData'),
+  importFile: document.querySelector('#importFile'),
   best: document.querySelector('#best'),
+  worst: document.querySelector('#worst'),
   avg: document.querySelector('#avg'),
+  median: document.querySelector('#median'),
   ao5: document.querySelector('#ao5'),
   ao12: document.querySelector('#ao12'),
+  bestAo5: document.querySelector('#bestAo5'),
+  bestAo12: document.querySelector('#bestAo12'),
+  stddev: document.querySelector('#stddev'),
   avgTps: document.querySelector('#avgTps'),
   count: document.querySelector('#count'),
+  last: document.querySelector('#last'),
   times: document.querySelector('#times'),
 };
 
@@ -86,6 +115,8 @@ let renderer;
 let controls;
 let cubeGroup;
 let ghostGroup;
+let keyLight;
+let fillLight;
 const SPACING = 1.08;
 
 const MOVE_KEYS = [
@@ -218,6 +249,14 @@ const BASE_SCALE = 0.90;
 const BASE_SCALE_RANGE = 0.08;
 const STICKER_SCALE = 0.88;
 const STICKER_SCALE_RANGE = 0.12;
+const MIRROR_METAL_COLORS = {
+  R: '#f5f7fb',
+  L: '#d1d7e0',
+  U: '#eef1f6',
+  D: '#a2a9b5',
+  F: '#cfd6e3',
+  B: '#b7becb',
+};
 
 const state = {
   size: 3,
@@ -238,9 +277,17 @@ const state = {
   colors: { ...PALETTES.Standard },
   edgeThickness: 70,
   cameraDistance: 2.8,
+  lightFollowCamera: false,
+  lightKey: { x: 6, y: 9, z: 10 },
+  lightFill: { x: -8, y: 4, z: -6 },
   partyMode: false,
   mirrorMode: false,
   ghostMode: false,
+  mirrorCube: false,
+  cubeType: 'classic',
+  deformMode: 'none',
+  deformStrength: 0.35,
+  deformSpeed: 1,
   mirrorUntil: 0,
   solveRecording: [],
   solveStartPerf: 0,
@@ -282,6 +329,8 @@ const state = {
 init();
 
 function init() {
+  loadCubeType();
+  loadLights();
   loadPalette();
   initScene();
   initUI();
@@ -307,6 +356,26 @@ function loadPalette() {
     }
   } catch (err) {
     // ignore malformed palette
+  }
+}
+
+function loadCubeType() {
+  const stored = localStorage.getItem('cubeType');
+  if (stored === 'mirror' || stored === 'classic') {
+    state.cubeType = stored;
+  }
+}
+
+function loadLights() {
+  const stored = localStorage.getItem('cubeLights');
+  if (!stored) return;
+  try {
+    const parsed = JSON.parse(stored);
+    if (parsed?.key) state.lightKey = { ...state.lightKey, ...parsed.key };
+    if (parsed?.fill) state.lightFill = { ...state.lightFill, ...parsed.fill };
+    if (typeof parsed?.follow === 'boolean') state.lightFollowCamera = parsed.follow;
+  } catch {
+    // ignore
   }
 }
 
@@ -355,9 +424,16 @@ function initScene() {
   controls.staticMoving = true;
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-  const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-  directional.position.set(8, 10, 6);
-  scene.add(ambient, directional);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x1e293b, 0.35);
+  keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  keyLight.position.set(state.lightKey.x, state.lightKey.y, state.lightKey.z);
+  keyLight.target.position.set(0, 0, 0);
+  scene.add(ambient, hemi, keyLight, keyLight.target);
+
+  fillLight = new THREE.DirectionalLight(0xffffff, 0.25);
+  fillLight.position.set(state.lightFill.x, state.lightFill.y, state.lightFill.z);
+  fillLight.target.position.set(0, 0, 0);
+  scene.add(fillLight, fillLight.target);
 
   window.addEventListener('resize', onResize);
 }
@@ -394,10 +470,14 @@ function initUI() {
   initPalette();
   initEdges();
   initCameraDistance();
+  initLightControls();
   initSettingsModal();
   initFunModes();
+  initDeformControls();
+  initCubeType();
   initHelpModal();
   initSolveModal();
+  initDataTransfer();
 
   resetScrambleHistory();
 
@@ -440,6 +520,65 @@ function initUI() {
   });
 
   document.addEventListener('keydown', handleKey);
+}
+
+function initDataTransfer() {
+  elements.exportData.addEventListener('click', () => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: exportLocalStorage(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `cube-data-${payload.exportedAt.replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  elements.importData.addEventListener('click', () => {
+    elements.importFile.click();
+  });
+
+  elements.importFile.addEventListener('change', async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const data = parsed?.data && typeof parsed.data === 'object' ? parsed.data : parsed;
+      if (!data || typeof data !== 'object') {
+        alert('Archivo inválido.');
+        return;
+      }
+      const proceed = confirm('Esto reemplazará el localStorage actual. ¿Continuar?');
+      if (!proceed) return;
+      localStorage.clear();
+      Object.keys(data).forEach((key) => {
+        localStorage.setItem(key, String(data[key]));
+      });
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo importar el archivo.');
+    } finally {
+      elements.importFile.value = '';
+    }
+  });
+}
+
+function exportLocalStorage() {
+  const out = {};
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    out[key] = localStorage.getItem(key);
+  }
+  return out;
 }
 
 function resetMainCubeToSolved() {
@@ -650,6 +789,96 @@ function initFunModes() {
   });
 }
 
+function initDeformControls() {
+  const buttons = {
+    none: elements.deformNone,
+    jelly: elements.deformJelly,
+    twist: elements.deformTwist,
+    wave: elements.deformWave,
+  };
+
+  const setMode = (mode) => {
+    state.deformMode = mode;
+    Object.entries(buttons).forEach(([key, btn]) => {
+      if (!btn) return;
+      btn.classList.toggle('secondary', key !== mode);
+    });
+  };
+
+  setMode(state.deformMode);
+
+  Object.entries(buttons).forEach(([mode, btn]) => {
+    if (!btn) return;
+    btn.addEventListener('click', () => setMode(mode));
+  });
+
+  if (elements.deformStrength) {
+    elements.deformStrength.value = Math.round(state.deformStrength * 100);
+    elements.deformValue.textContent = state.deformStrength.toFixed(2);
+    elements.deformStrength.addEventListener('input', () => {
+      state.deformStrength = Number(elements.deformStrength.value) / 100;
+      elements.deformValue.textContent = state.deformStrength.toFixed(2);
+    });
+  }
+}
+
+function initCubeType() {
+  if (!elements.cubeTypeSelect) return;
+  elements.cubeTypeSelect.value = state.cubeType;
+  elements.cubeTypeSelect.addEventListener('change', () => {
+    state.cubeType = elements.cubeTypeSelect.value;
+    localStorage.setItem('cubeType', state.cubeType);
+    applyCubeType();
+  });
+  applyCubeType();
+}
+
+function initLightControls() {
+  const sync = () => {
+    if (keyLight) keyLight.position.set(state.lightKey.x, state.lightKey.y, state.lightKey.z);
+    if (fillLight) fillLight.position.set(state.lightFill.x, state.lightFill.y, state.lightFill.z);
+    if (elements.lightKeyX) elements.lightKeyXValue.textContent = String(state.lightKey.x);
+    if (elements.lightKeyY) elements.lightKeyYValue.textContent = String(state.lightKey.y);
+    if (elements.lightKeyZ) elements.lightKeyZValue.textContent = String(state.lightKey.z);
+    if (elements.lightFillX) elements.lightFillXValue.textContent = String(state.lightFill.x);
+    if (elements.lightFillY) elements.lightFillYValue.textContent = String(state.lightFill.y);
+    if (elements.lightFillZ) elements.lightFillZValue.textContent = String(state.lightFill.z);
+    if (elements.toggleLightFollow) {
+      elements.toggleLightFollow.classList.toggle('secondary', !state.lightFollowCamera);
+    }
+    localStorage.setItem('cubeLights', JSON.stringify({
+      key: state.lightKey,
+      fill: state.lightFill,
+      follow: state.lightFollowCamera,
+    }));
+  };
+
+  const bind = (input, key, axis) => {
+    if (!input) return;
+    input.value = String(state[key][axis]);
+    input.addEventListener('input', () => {
+      state[key][axis] = Number(input.value);
+      sync();
+    });
+  };
+
+  bind(elements.lightKeyX, 'lightKey', 'x');
+  bind(elements.lightKeyY, 'lightKey', 'y');
+  bind(elements.lightKeyZ, 'lightKey', 'z');
+  bind(elements.lightFillX, 'lightFill', 'x');
+  bind(elements.lightFillY, 'lightFill', 'y');
+  bind(elements.lightFillZ, 'lightFill', 'z');
+
+  if (elements.toggleLightFollow) {
+    elements.toggleLightFollow.addEventListener('click', () => {
+      state.lightFollowCamera = !state.lightFollowCamera;
+      sync();
+    });
+  }
+
+  sync();
+}
+
 function initHelpModal() {
   const open = () => {
     elements.helpModal.classList.remove('hidden');
@@ -779,12 +1008,20 @@ function renderSessions() {
 
   const entries = state.sessions[state.activeSession] || [];
   const times = entries.map((e) => e.time);
+  const sortedTimes = times.slice().sort((a, b) => a - b);
+  const lastEntry = entries[entries.length - 1];
   elements.count.textContent = String(entries.length);
   elements.best.textContent = times.length ? formatTime(Math.min(...times)) : '-';
+  elements.worst.textContent = times.length ? formatTime(Math.max(...times)) : '-';
   elements.avg.textContent = times.length ? formatTime(average(times)) : '-';
+  elements.median.textContent = times.length ? formatTime(median(sortedTimes)) : '-';
   elements.ao5.textContent = formatAverage(times, 5);
   elements.ao12.textContent = formatAverage(times, 12);
+  elements.bestAo5.textContent = formatBestAverage(times, 5);
+  elements.bestAo12.textContent = formatBestAverage(times, 12);
+  elements.stddev.textContent = times.length ? formatTime(stddev(times)) : '-';
   elements.avgTps.textContent = formatTpsAverage(entries);
+  elements.last.textContent = lastEntry ? formatTime(lastEntry.time) : '-';
 
   const ao5List = rollingAverageList(times, 5);
   const ao12List = rollingAverageList(times, 12);
@@ -874,6 +1111,7 @@ function buildCube(size) {
           (y - offset) * SPACING,
           (z - offset) * SPACING
         );
+        setBasePosition(cubie);
         cubie.userData.coord = { x, y, z };
         cubie.userData.initialCoord = { x, y, z };
         cubeGroup.add(cubie);
@@ -886,7 +1124,9 @@ function buildCube(size) {
   updateLayerControl();
   updateXray();
   updateExplode();
+  updateMirrorCube();
   updateEdgeThickness();
+  updateBaseMaterials();
   if (state.showNet) renderNet();
   frameCube();
   updateTitle(size);
@@ -896,7 +1136,12 @@ function buildCube(size) {
 function createCubie(x, y, z, size, baseGeometry, stickerGeometry, options = {}) {
   const { ghost = false } = options;
   const group = new THREE.Group();
-  const baseMaterial = new THREE.MeshStandardMaterial({ color: BASE_INNER });
+  const { base, sticker } = getMaterialTheme();
+  const baseMaterial = new THREE.MeshStandardMaterial({
+    color: base.color,
+    metalness: base.metalness,
+    roughness: base.roughness,
+  });
   const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
   const baseScale = getBaseScale();
   baseMesh.scale.set(baseScale, baseScale, baseScale);
@@ -907,12 +1152,13 @@ function createCubie(x, y, z, size, baseGeometry, stickerGeometry, options = {})
   const stickerColors = {};
   group.userData.stickerColors = stickerColors;
 
-  if (x === max) addSticker(group, stickerGeometry, new THREE.Vector3(1, 0, 0), state.colors.R, 'R', ghost);
-  if (x === 0) addSticker(group, stickerGeometry, new THREE.Vector3(-1, 0, 0), state.colors.L, 'L', ghost);
-  if (y === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 1, 0), state.colors.U, 'U', ghost);
-  if (y === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, -1, 0), state.colors.D, 'D', ghost);
-  if (z === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, 1), state.colors.F, 'F', ghost);
-  if (z === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, -1), state.colors.B, 'B', ghost);
+  const active = getActiveColors();
+  if (x === max) addSticker(group, stickerGeometry, new THREE.Vector3(1, 0, 0), active.R, 'R', ghost, sticker);
+  if (x === 0) addSticker(group, stickerGeometry, new THREE.Vector3(-1, 0, 0), active.L, 'L', ghost, sticker);
+  if (y === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 1, 0), active.U, 'U', ghost, sticker);
+  if (y === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, -1, 0), active.D, 'D', ghost, sticker);
+  if (z === max) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, 1), active.F, 'F', ghost, sticker);
+  if (z === 0) addSticker(group, stickerGeometry, new THREE.Vector3(0, 0, -1), active.B, 'B', ghost, sticker);
 
   if (ghost) {
     baseMaterial.transparent = true;
@@ -923,8 +1169,12 @@ function createCubie(x, y, z, size, baseGeometry, stickerGeometry, options = {})
   return group;
 }
 
-function addSticker(group, geometry, normal, color, faceKey, ghost = false) {
-  const material = new THREE.MeshStandardMaterial({ color });
+function addSticker(group, geometry, normal, color, faceKey, ghost = false, theme = null) {
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    metalness: theme?.metalness ?? 0.2,
+    roughness: theme?.roughness ?? 0.6,
+  });
   const sticker = new THREE.Mesh(geometry, material);
   sticker.userData.isSticker = true;
   sticker.userData.faceKey = faceKey;
@@ -950,9 +1200,75 @@ function onResize() {
 }
 
 function render() {
+  applyDeform(performance.now());
+  if (keyLight && fillLight && controls) {
+    if (state.lightFollowCamera) {
+      keyLight.position.copy(camera.position);
+      fillLight.position.copy(camera.position).add(new THREE.Vector3(-4, -2, -4));
+    }
+    keyLight.target.position.copy(controls.target);
+    keyLight.target.updateMatrixWorld();
+    fillLight.target.position.copy(controls.target);
+    fillLight.target.updateMatrixWorld();
+  }
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(render);
+}
+
+function applyDeform(now) {
+  if (!cubeGroup) return;
+  if (state.rotating) return;
+  const mode = state.deformMode;
+  const strength = clamp(state.deformStrength, 0, 1);
+  const amount = strength * 0.28;
+  const t = now * 0.001 * state.deformSpeed;
+
+  const applyTo = (cubies) => {
+    cubies.forEach((cubie) => {
+      const base = cubie.userData.basePosition;
+      if (!base) return;
+      if (mode === 'none' || state.rotating) {
+        cubie.position.copy(base);
+        return;
+      }
+
+      const bx = base.x;
+      const by = base.y;
+      const bz = base.z;
+
+      if (mode === 'twist') {
+        const angle = Math.sin(t * 1.6 + by * 0.6) * amount * 2.2;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const x = bx * cos - bz * sin;
+        const z = bx * sin + bz * cos;
+        cubie.position.set(x, by, z);
+        return;
+      }
+
+      let dx = 0;
+      let dy = 0;
+      let dz = 0;
+
+      if (mode === 'jelly') {
+        dx = Math.sin(t * 2.3 + by * 1.3) * amount;
+        dy = Math.sin(t * 2.9 + bx * 1.1) * amount;
+        dz = Math.sin(t * 2.1 + (bx + bz) * 0.8) * amount;
+      }
+
+      if (mode === 'wave') {
+        dy = Math.sin(t * 2 + bx * 0.9 + bz * 0.9) * amount * 1.2;
+        dx = Math.sin(t * 1.5 + by * 0.7) * amount * 0.5;
+        dz = Math.sin(t * 1.7 + by * 0.6) * amount * 0.4;
+      }
+
+      cubie.position.set(bx + dx, by + dy, bz + dz);
+    });
+  };
+
+  applyTo(state.cubies);
+  if (ghostGroup) applyTo(ghostGroup.children);
 }
 
 function frameCube() {
@@ -1355,11 +1671,41 @@ function snapCubiePosition(cubie, size) {
   const offset = (size - 1) / 2;
   const { x, y, z } = cubie.userData.coord;
   const spacing = SPACING * (state.exploded ? 1.35 : 1);
-  cubie.position.set(
+  const basePos = new THREE.Vector3(
     (x - offset) * spacing,
     (y - offset) * spacing,
     (z - offset) * spacing
   );
+  cubie.position.copy(basePos);
+  setBasePosition(cubie, basePos);
+  if (state.mirrorCube) {
+    const mirrorOffset = getMirrorOffset(cubie.userData.coord, size, spacing);
+    cubie.position.add(mirrorOffset);
+  }
+}
+
+function setBasePosition(cubie, pos = null) {
+  if (!cubie.userData.basePosition) {
+    cubie.userData.basePosition = new THREE.Vector3();
+  }
+  if (pos) {
+    cubie.userData.basePosition.copy(pos);
+  } else {
+    cubie.userData.basePosition.copy(cubie.position);
+  }
+}
+
+function getMirrorOffset(coord, size, spacing) {
+  const offset = (size - 1) / 2;
+  const max = Math.max(offset, 1);
+  const nx = (coord.x - offset) / max;
+  const ny = (coord.y - offset) / max;
+  const nz = (coord.z - offset) / max;
+  const gap = spacing * 0.055;
+  const ease = (v) => Math.sign(v) * Math.sqrt(Math.abs(v));
+  const maxAbs = Math.max(Math.abs(nx), Math.abs(ny), Math.abs(nz));
+  const layerBoost = 0.6 + maxAbs * 0.8;
+  return new THREE.Vector3(ease(nx) * gap * layerBoost, ease(ny) * gap * layerBoost, ease(nz) * gap * layerBoost);
 }
 
 function generateScramble() {
@@ -1505,6 +1851,22 @@ function average(values) {
   return sum / values.length;
 }
 
+function median(sortedValues) {
+  if (!sortedValues.length) return 0;
+  const mid = Math.floor(sortedValues.length / 2);
+  if (sortedValues.length % 2 === 0) {
+    return (sortedValues[mid - 1] + sortedValues[mid]) / 2;
+  }
+  return sortedValues[mid];
+}
+
+function stddev(values) {
+  if (!values.length) return 0;
+  const mean = average(values);
+  const variance = average(values.map((v) => (v - mean) ** 2));
+  return Math.sqrt(variance);
+}
+
 function formatAverage(values, count) {
   if (values.length < count) return '-';
   const slice = values.slice(-count);
@@ -1512,6 +1874,13 @@ function formatAverage(values, count) {
   const trimmed = sorted.slice(1, -1);
   const avg = average(trimmed);
   return formatTime(avg);
+}
+
+function formatBestAverage(values, count) {
+  if (values.length < count) return '-';
+  const list = rollingAverageList(values, count).filter((v) => Number.isFinite(v));
+  if (!list.length) return '-';
+  return formatTime(Math.min(...list));
 }
 
 function formatTpsAverage(entries) {
@@ -1578,17 +1947,33 @@ function updateXray() {
 }
 
 function updateStickerColors() {
+  const active = getActiveColors();
+  const { sticker } = getMaterialTheme();
   state.cubies.forEach((cubie) => {
     const map = cubie.userData.stickerColors || {};
     cubie.children.forEach((child) => {
       if (!child.userData.isSticker) return;
       const faceKey = child.userData.faceKey;
-      const color = state.colors[faceKey];
+      const color = active[faceKey];
       child.material.color.set(color);
+      child.material.metalness = sticker.metalness;
+      child.material.roughness = sticker.roughness;
       map[faceKey] = color;
     });
     cubie.userData.stickerColors = map;
   });
+  if (ghostGroup) {
+    ghostGroup.children.forEach((cubie) => {
+      cubie.children.forEach((child) => {
+        if (!child.userData.isSticker) return;
+        const faceKey = child.userData.faceKey;
+        const color = active[faceKey];
+        child.material.color.set(color);
+        child.material.metalness = sticker.metalness;
+        child.material.roughness = sticker.roughness;
+      });
+    });
+  }
 }
 
 function updateEdgeThickness() {
@@ -1605,6 +1990,66 @@ function updateEdgeThickness() {
     });
   });
   if (state.showNet) renderNet();
+}
+
+function applyCubeType() {
+  state.mirrorCube = state.cubeType === 'mirror';
+  updateMirrorCube();
+  updateStickerColors();
+  updateBaseMaterials();
+  updatePaletteControls();
+  if (state.showNet) renderNet();
+}
+
+function updateBaseMaterials() {
+  const { base } = getMaterialTheme();
+  state.cubies.forEach((cubie) => {
+    cubie.children.forEach((child) => {
+      if (!child.userData.isBase) return;
+      child.material.color.set(base.color);
+      child.material.metalness = base.metalness;
+      child.material.roughness = base.roughness;
+    });
+  });
+  if (ghostGroup) {
+    ghostGroup.children.forEach((cubie) => {
+      cubie.children.forEach((child) => {
+        if (!child.userData.isBase) return;
+        child.material.color.set(base.color);
+        child.material.metalness = base.metalness;
+        child.material.roughness = base.roughness;
+      });
+    });
+  }
+}
+
+function updatePaletteControls() {
+  const disabled = state.cubeType === 'mirror';
+  if (elements.paletteSelect) elements.paletteSelect.disabled = disabled;
+  if (elements.resetPalette) elements.resetPalette.disabled = disabled;
+  if (elements.colorGrid) {
+    elements.colorGrid.querySelectorAll('input[type=\"color\"]').forEach((input) => {
+      input.disabled = disabled;
+    });
+  }
+}
+
+function getActiveColors() {
+  if (state.cubeType === 'mirror') return MIRROR_METAL_COLORS;
+  return state.colors;
+}
+
+function getMaterialTheme() {
+  if (state.cubeType === 'mirror') {
+    return {
+      base: { color: '#3f4855', metalness: 0.85, roughness: 0.22 },
+      sticker: { metalness: 0.95, roughness: 0.16 },
+    };
+  }
+  return {
+    base: { color: BASE_INNER, metalness: 0.1, roughness: 0.85 },
+    sticker: { metalness: 0.2, roughness: 0.6 },
+  };
 }
 
 function getBaseScale() {
@@ -1626,6 +2071,9 @@ function updateGhost() {
   if (!state.ghostMode) return;
   ghostGroup = buildGhostCube(state.size);
   scene.add(ghostGroup);
+  updateMirrorCube();
+  updateBaseMaterials();
+  updateStickerColors();
 }
 
 function buildGhostCube(size) {
@@ -1642,6 +2090,7 @@ function buildGhostCube(size) {
           (y - offset) * SPACING,
           (z - offset) * SPACING
         );
+        setBasePosition(cubie);
         group.add(cubie);
       }
     }
@@ -1652,6 +2101,47 @@ function buildGhostCube(size) {
 function updateExplode() {
   state.cubies.forEach((cubie) => snapCubiePosition(cubie, state.size));
   if (state.showNet) renderNet();
+}
+
+function updateMirrorCube() {
+  const applyTo = (cubies, size) => {
+    const offset = (size - 1) / 2;
+    const max = Math.max(offset, 1);
+    const strength = state.mirrorCube ? 0.5 : 0;
+    cubies.forEach((cubie) => {
+      const { x, y, z } = cubie.userData.coord;
+      const nx = (x - offset) / max;
+      const ny = (y - offset) / max;
+      const nz = (z - offset) / max;
+      const ax = Math.abs(nx);
+      const ay = Math.abs(ny);
+      const az = Math.abs(nz);
+      const centerBias = 0.4;
+      const sx = 1 + strength * (nx * 0.5 + (ax - centerBias) * 0.75);
+      const sy = 1 + strength * (ny * 0.5 + (ay - centerBias) * 0.75);
+      const sz = 1 + strength * (nz * 0.5 + (az - centerBias) * 0.75);
+      cubie.scale.set(sx, sy, sz);
+      const scaleFactor = (sx + sy + sz) / 3;
+      const baseScale = getBaseScale() * scaleFactor;
+      const stickerScale = getStickerScale() * scaleFactor;
+      cubie.children.forEach((child) => {
+        if (child.userData.isBase) {
+          child.scale.set(baseScale, baseScale, baseScale);
+        }
+        if (child.userData.isSticker) {
+          child.scale.set(stickerScale, stickerScale, stickerScale);
+        }
+      });
+      if (state.mirrorCube) {
+        const spacing = SPACING * (state.exploded ? 1.35 : 1);
+        const mirrorOffset = getMirrorOffset(cubie.userData.coord, size, spacing);
+        cubie.position.copy(cubie.userData.basePosition || cubie.position).add(mirrorOffset);
+      }
+    });
+  };
+
+  applyTo(state.cubies, state.size);
+  if (ghostGroup) applyTo(ghostGroup.children, state.size);
 }
 
 function renderNet() {
@@ -1704,6 +2194,7 @@ function getFaceColors(faceKey, size) {
   const max = size - 1;
   const stickers = [];
   const coords = [];
+  const baseColor = getMaterialTheme().base.color;
 
   for (let y = max; y >= 0; y--) {
     for (let x = 0; x < size; x++) {
@@ -1721,13 +2212,13 @@ function getFaceColors(faceKey, size) {
   };
 
   const map = faceMap[faceKey];
-  const grid = Array.from({ length: size * size }).fill(BASE_INNER);
+  const grid = Array.from({ length: size * size }).fill(baseColor);
 
   state.cubies.forEach((cubie) => {
     if (cubie.userData.coord[map.axis] !== map.value) return;
     const { row, col } = map.get(cubie.userData.coord);
     const color = getStickerColor(cubie, faceKey);
-    grid[row * size + col] = color || BASE_INNER;
+    grid[row * size + col] = color || baseColor;
   });
 
   grid.forEach((color) => stickers.push(color));

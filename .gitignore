@@ -1,4 +1,5 @@
 node_modules/
 dist/
 dist-serve/
+hypercube/
 build/
