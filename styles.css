@@ -328,13 +328,15 @@ button.secondary {
 
 .times {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text);
-  min-height: 220px;
-  max-height: 100%;
+  height: 260px;
+  max-height: 260px;
   overflow-y: auto;
   display: grid;
   gap: 6px;
+  align-content: start;
+  grid-auto-rows: min-content;
 }
 
 .times::-webkit-scrollbar {
@@ -363,7 +365,7 @@ button.secondary {
   align-items: center;
   background: rgba(15, 23, 42, 0.5);
   border: 1px solid rgba(148, 163, 184, 0.2);
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 12px;
 }
 
@@ -374,6 +376,11 @@ button.secondary {
   box-shadow: none;
   text-align: left;
   font-weight: 600;
+  display: grid;
+  grid-template-columns: 1fr 90px 90px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
 }
 
 .time-main:hover {
@@ -382,11 +389,23 @@ button.secondary {
   color: var(--accent-2);
 }
 
+.time-core {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-avg {
+  text-align: right;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .delete-time {
   background: rgba(239, 68, 68, 0.9);
   color: #0f172a;
   box-shadow: none;
-  padding: 6px 8px;
+  padding: 4px 8px;
   border-radius: 8px;
   font-size: 11px;
 }

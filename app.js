@@ -637,15 +637,25 @@ function renderSessions() {
   elements.ao5.textContent = formatAverage(times, 5);
   elements.ao12.textContent = formatAverage(times, 12);
 
+  const ao5List = rollingAverageList(times, 5);
+  const ao12List = rollingAverageList(times, 12);
+
   elements.times.innerHTML = '';
   entries.slice().reverse().forEach((entry, index) => {
+    const originalIndex = entries.length - index - 1;
+    const ao5 = ao5List[originalIndex];
+    const ao12 = ao12List[originalIndex];
     const row = document.createElement('div');
     row.className = 'time-row';
 
     const main = document.createElement('button');
     main.className = 'time-main';
     main.type = 'button';
-    main.textContent = `#${entries.length - index}  ${formatTime(entry.time)}`;
+    main.innerHTML = `
+      <span class="time-core">#${entries.length - index}  ${formatTime(entry.time)}</span>
+      <span class="time-avg">${ao5 ? `ao5 ${formatTime(ao5)}` : ''}</span>
+      <span class="time-avg">${ao12 ? `ao12 ${formatTime(ao12)}` : ''}</span>
+    `;
 
     main.addEventListener('click', () => {
       elements.scrambleText.textContent = entry.scramble
@@ -656,7 +666,7 @@ function renderSessions() {
     const del = document.createElement('button');
     del.className = 'delete-time';
     del.type = 'button';
-    del.textContent = 'Borrar';
+    del.textContent = '×';
     del.addEventListener('click', () => {
       deleteTime(entries.length - index - 1);
     });
@@ -1293,6 +1303,17 @@ function formatAverage(values, count) {
   const trimmed = sorted.slice(1, -1);
   const avg = average(trimmed);
   return formatTime(avg);
+}
+
+function rollingAverageList(values, count) {
+  return values.map((_, index) => {
+    const start = index - count + 1;
+    if (start < 0) return null;
+    const slice = values.slice(start, index + 1);
+    const sorted = slice.slice().sort((a, b) => a - b);
+    const trimmed = sorted.slice(1, -1);
+    return average(trimmed);
+  });
 }
 
 function onVisibilityChange() {
